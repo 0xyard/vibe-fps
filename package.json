@@ -1,0 +1,11 @@
+{
+  "name": "classic-toon-fps",
+  "version": "1.0.0",
+  "description": "A classic cartoon style FPS roguelite game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "author": "",
+  "license": "MIT"
+} 
