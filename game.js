@@ -52,6 +52,12 @@ let velocity = new THREE.Vector3();
 // Weapon setup
 const weapon = createWeapon();
 camera.add(weapon);
+
+// Create fist for melee attack
+const fist = createFist();
+fist.visible = false; // Hide initially
+camera.add(fist);
+
 scene.add(camera);
 
 // Add classic Mickey-style environment
@@ -145,8 +151,17 @@ function playSound(sound) {
 // Load sounds
 loadSoundEffects();
 
+// Disable context menu completely for the game
+document.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    return false;
+}, false);
+
 // Event listeners
-document.addEventListener('click', () => {
+document.addEventListener('mousedown', (event) => {
+    // Only handle left mouse button clicks (button 0)
+    if (event.button !== 0) return;
+    
     if (!controls.isLocked) {
         controls.lock();
     } else if (!gameState.gameOver) {
@@ -234,6 +249,21 @@ document.addEventListener('contextmenu', (event) => {
     event.preventDefault(); // Prevent context menu from appearing
     if (controls.isLocked && !gameState.gameOver) {
         meleeAttack();
+    }
+});
+
+// Also add mousedown event for right-click to ensure it works across all browsers
+document.addEventListener('mousedown', (event) => {
+    // Check for right mouse button (button 2 in most browsers, sometimes button 1)
+    if (event.button === 2 || event.button === 1) {
+        debugLog(`Right mouse button clicked (button: ${event.button})`);
+        event.preventDefault();
+        if (controls.isLocked && !gameState.gameOver) {
+            debugLog('Controls locked, triggering melee attack');
+            meleeAttack();
+        } else {
+            debugLog(`Controls locked: ${controls.isLocked}, Game over: ${gameState.gameOver}`);
+        }
     }
 });
 
@@ -713,18 +743,165 @@ function reload() {
     }
 }
 
+// Create fist for melee attack
+function createFist() {
+    debugLog('Creating fist for melee attack');
+    
+    // Create a cartoon-style fist
+    const fistGroup = new THREE.Group();
+    
+    // Main fist - white glove like in classic cartoons
+    const fistGeometry = new THREE.SphereGeometry(0.2, 16, 16);
+    const fistMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const fistMesh = new THREE.Mesh(fistGeometry, fistMaterial);
+    
+    // Black outline for cartoon effect
+    const outlineGeometry = new THREE.SphereGeometry(0.21, 16, 16);
+    const outlineMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0x000000, 
+        side: THREE.BackSide 
+    });
+    const outline = new THREE.Mesh(outlineGeometry, outlineMaterial);
+    fistMesh.add(outline);
+    
+    // Add details to make it look like a cartoon glove
+    const knuckleGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+    const knuckleMaterial = new THREE.MeshBasicMaterial({ color: 0xdddddd });
+    
+    // Add knuckles
+    for (let i = 0; i < 3; i++) {
+        const knuckle = new THREE.Mesh(knuckleGeometry, knuckleMaterial);
+        knuckle.position.set(0.1, 0.1 - (i * 0.1), 0.15);
+        fistGroup.add(knuckle);
+    }
+    
+    // Add wrist/cuff
+    const cuffGeometry = new THREE.CylinderGeometry(0.15, 0.2, 0.1, 16);
+    const cuffMaterial = new THREE.MeshBasicMaterial({ color: 0xdddddd });
+    const cuff = new THREE.Mesh(cuffGeometry, cuffMaterial);
+    cuff.rotation.x = Math.PI / 2;
+    cuff.position.set(0, 0, -0.2);
+    
+    // Black outline for cuff
+    const cuffOutlineGeometry = new THREE.CylinderGeometry(0.16, 0.21, 0.11, 16);
+    const cuffOutlineMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0x000000, 
+        side: THREE.BackSide 
+    });
+    const cuffOutline = new THREE.Mesh(cuffOutlineGeometry, cuffOutlineMaterial);
+    cuffOutline.rotation.x = Math.PI / 2;
+    cuffOutline.position.copy(cuff.position);
+    
+    // Add all parts to the group
+    fistGroup.add(fistMesh);
+    fistGroup.add(cuff);
+    fistGroup.add(cuffOutline);
+    
+    // Add classic cartoon lines on the glove
+    const lineGeometry = new THREE.BoxGeometry(0.01, 0.15, 0.01);
+    const lineMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    
+    // Horizontal lines on the back of the glove
+    for (let i = 0; i < 2; i++) {
+        const line = new THREE.Mesh(lineGeometry, lineMaterial);
+        line.rotation.z = Math.PI / 2;
+        line.position.set(0, 0.05 - (i * 0.1), 0.18);
+        fistGroup.add(line);
+    }
+    
+    // Position the fist off-screen to the left
+    fistGroup.position.set(-0.8, -0.3, -0.5);
+    
+    return fistGroup;
+}
+
 // Melee attack function
 function meleeAttack() {
-    // Animate the weapon for melee
-    weapon.position.z += 0.3;
-    weapon.rotation.x = 0.3;
-    setTimeout(() => {
-        weapon.position.z -= 0.3;
-        weapon.rotation.x = 0;
-    }, 200);
+    debugLog('Melee attack triggered');
+    
+    // Don't allow melee attack if already in progress
+    if (fist.visible) {
+        debugLog('Melee attack already in progress, ignoring');
+        return;
+    }
+    
+    debugLog('Executing melee attack');
     
     // Play melee sound
     playSound('melee');
+    
+    // Show the fist
+    fist.visible = true;
+    
+    // Animate the fist punching forward
+    const startPosition = new THREE.Vector3(-0.8, -0.3, -0.5);
+    const punchPosition = new THREE.Vector3(0, -0.3, -1.2);
+    
+    // Starting rotation and scale
+    const startRotation = new THREE.Euler(0, 0, 0);
+    const punchRotation = new THREE.Euler(0, 0, -Math.PI * 0.25); // Rotate for impact
+    const startScale = new THREE.Vector3(1, 1, 1);
+    const impactScale = new THREE.Vector3(1.2, 1.2, 0.8); // Squash on impact
+    
+    // Reset fist to starting position
+    fist.position.copy(startPosition);
+    fist.rotation.set(startRotation.x, startRotation.y, startRotation.z);
+    fist.scale.copy(startScale);
+    
+    // Punch animation
+    const punchDuration = 300; // milliseconds
+    const startTime = performance.now();
+    
+    function animatePunch() {
+        const now = performance.now();
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / punchDuration, 1);
+        
+        if (progress < 0.4) {
+            // Wind up - move slightly back and rotate
+            const t = progress / 0.4; // 0 to 1 during wind up
+            const windupPosition = new THREE.Vector3(-1.0, -0.3, -0.5); // Further left
+            fist.position.lerpVectors(startPosition, windupPosition, t);
+            fist.rotation.z = -Math.PI * 0.1 * t; // Slight rotation back
+        } else if (progress < 0.7) {
+            // Punch forward
+            const t = (progress - 0.4) / 0.3; // 0 to 1 during punch
+            const windupPosition = new THREE.Vector3(-1.0, -0.3, -0.5);
+            fist.position.lerpVectors(windupPosition, punchPosition, t);
+            
+            // Rotate during punch
+            fist.rotation.z = -Math.PI * 0.1 * (1 - t) - Math.PI * 0.25 * t;
+            
+            // Scale for impact at the end of the punch
+            if (t > 0.8) {
+                const scaleT = (t - 0.8) / 0.2;
+                fist.scale.lerpVectors(startScale, impactScale, scaleT);
+            }
+        } else {
+            // Retract
+            const t = (progress - 0.7) / 0.3; // 0 to 1 during retraction
+            fist.position.lerpVectors(punchPosition, startPosition, t);
+            
+            // Rotate back to normal
+            fist.rotation.z = -Math.PI * 0.25 * (1 - t);
+            
+            // Scale back to normal
+            fist.scale.lerpVectors(impactScale, startScale, t);
+        }
+        
+        if (progress < 1) {
+            requestAnimationFrame(animatePunch);
+        } else {
+            // Animation complete, hide the fist
+            fist.visible = false;
+            fist.position.copy(startPosition);
+            fist.rotation.set(0, 0, 0);
+            fist.scale.set(1, 1, 1);
+        }
+    }
+    
+    // Start the animation
+    animatePunch();
     
     // Ray casting for melee attack
     const raycaster = new THREE.Raycaster();
@@ -744,8 +921,18 @@ function meleeAttack() {
                 // Play enemy hit sound
                 playSound('enemyHit');
                 
-                // Visual feedback for hit
+                // Visual feedback for hit - more dramatic for melee
                 hitObject.material.color.set(0xff0000);
+                
+                // Add impact effect - make the enemy move back slightly
+                const playerPosition = new THREE.Vector3();
+                camera.getWorldPosition(playerPosition);
+                const direction = new THREE.Vector3();
+                direction.subVectors(enemies[i].mesh.position, playerPosition).normalize();
+                
+                // Push enemy back
+                enemies[i].mesh.position.add(direction.multiplyScalar(0.5));
+                
                 setTimeout(() => {
                     if (hitObject.material) {
                         hitObject.material.color.set(0x000000);
@@ -789,3 +976,8 @@ function toggleInventory() {
 
 // Initialize bullet pickups
 spawnBulletPickups();
+
+// Add a general mousedown debug logger
+document.addEventListener('mousedown', (event) => {
+    debugLog(`Mouse button pressed: ${event.button}`);
+}, true); // Use capture phase to ensure this runs first
