@@ -4,6 +4,9 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 // Debug flag - turn this on to help troubleshoot
 const DEBUG = true;
 
+// Array to store objects that should have collision detection
+const collisionObjects = [];
+
 // Game state
 let gameState = {
     health: 100,
@@ -14,7 +17,10 @@ let gameState = {
     score: 0,
     gameOver: false,
     showInventory: false,
-    soundEnabled: true
+    soundEnabled: true,
+    brokenWindows: [], // Track which windows are broken
+    lastHitTime: 0, // Track when player was last hit
+    showingRoundMessage: false // Track if round message is showing
 };
 
 // DOM elements
@@ -65,7 +71,6 @@ createEnvironment();
 
 // Add enemies
 const enemies = [];
-spawnEnemies();
 
 // Physics settings
 const gravity = 9.8;
@@ -98,7 +103,8 @@ const soundEffects = {
     melee: new THREE.Audio(audioListener),
     enemyHit: new THREE.Audio(audioListener),
     enemyDeath: new THREE.Audio(audioListener),
-    pickupBullets: new THREE.Audio(audioListener)
+    pickupBullets: new THREE.Audio(audioListener),
+    playerHurt: new THREE.Audio(audioListener) // New sound for player getting hit
 };
 
 // Audio loader
@@ -135,6 +141,12 @@ function loadSoundEffects() {
     audioLoader.load('https://assets.mixkit.co/active_storage/sfx/270/270-preview.mp3', function(buffer) {
         soundEffects.pickupBullets.setBuffer(buffer);
         soundEffects.pickupBullets.setVolume(0.5);
+    });
+    
+    // Player hurt sound - cartoon grunt/yelp
+    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1143/1143-preview.mp3', function(buffer) {
+        soundEffects.playerHurt.setBuffer(buffer);
+        soundEffects.playerHurt.setVolume(0.7);
     });
 }
 
@@ -306,6 +318,161 @@ function createWeapon() {
     return weaponGroup;
 }
 
+// Create a central building with doorways and windows
+function createCentralBuilding() {
+    debugLog('Creating central building');
+    
+    // Building dimensions
+    const width = 10;
+    const height = 4;
+    const depth = 10;
+    const wallThickness = 0.3;
+    
+    // Create building group
+    const buildingGroup = new THREE.Group();
+    
+    // Building material - classic cartoon style
+    const buildingMaterial = new THREE.MeshBasicMaterial({ color: 0xDDDDDD });
+    const outlineMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    
+    // Create walls (4 separate walls instead of a box to allow for doorways and windows)
+    
+    // Front wall (with door)
+    const frontWallGroup = new THREE.Group();
+    
+    // Left section of front wall
+    const frontLeftGeometry = new THREE.BoxGeometry(width/2 - 1, height, wallThickness);
+    const frontLeft = new THREE.Mesh(frontLeftGeometry, buildingMaterial);
+    frontLeft.position.set(-width/4 - 0.5, height/2, depth/2);
+    frontWallGroup.add(frontLeft);
+    collisionObjects.push(frontLeft);
+    
+    // Right section of front wall
+    const frontRightGeometry = new THREE.BoxGeometry(width/2 - 1, height, wallThickness);
+    const frontRight = new THREE.Mesh(frontRightGeometry, buildingMaterial);
+    frontRight.position.set(width/4 + 0.5, height/2, depth/2);
+    frontWallGroup.add(frontRight);
+    collisionObjects.push(frontRight);
+    
+    // Top section of front wall (above door) - RAISED HIGHER
+    const frontTopGeometry = new THREE.BoxGeometry(2, height/4, wallThickness);
+    const frontTop = new THREE.Mesh(frontTopGeometry, buildingMaterial);
+    frontTop.position.set(0, height * 0.875, depth/2);
+    frontWallGroup.add(frontTop);
+    collisionObjects.push(frontTop);
+    
+    // Back wall (with window opening)
+    // Create back wall in sections to leave an opening for the window
+    
+    // Top section of back wall
+    const backTopGeometry = new THREE.BoxGeometry(width, height/2, wallThickness);
+    const backTop = new THREE.Mesh(backTopGeometry, buildingMaterial);
+    backTop.position.set(0, height * 0.75, -depth/2);
+    buildingGroup.add(backTop);
+    collisionObjects.push(backTop);
+    
+    // Bottom section of back wall
+    const backBottomGeometry = new THREE.BoxGeometry(width, height/2 - 0.75, wallThickness);
+    const backBottom = new THREE.Mesh(backBottomGeometry, buildingMaterial);
+    backBottom.position.set(0, (height/2 - 0.75)/2, -depth/2);
+    buildingGroup.add(backBottom);
+    collisionObjects.push(backBottom);
+    
+    // Left section of back wall
+    const backLeftGeometry = new THREE.BoxGeometry((width - 2)/2, 0.75, wallThickness);
+    const backLeft = new THREE.Mesh(backLeftGeometry, buildingMaterial);
+    backLeft.position.set(-(width - 2)/4, height/2, -depth/2);
+    buildingGroup.add(backLeft);
+    collisionObjects.push(backLeft);
+    
+    // Right section of back wall
+    const backRightGeometry = new THREE.BoxGeometry((width - 2)/2, 0.75, wallThickness);
+    const backRight = new THREE.Mesh(backRightGeometry, buildingMaterial);
+    backRight.position.set((width - 2)/4, height/2, -depth/2);
+    buildingGroup.add(backRight);
+    collisionObjects.push(backRight);
+    
+    // Left wall (with window opening)
+    // Create left wall in sections to leave an opening for the window
+    
+    // Top section of left wall
+    const leftTopGeometry = new THREE.BoxGeometry(wallThickness, height/2, depth);
+    const leftTop = new THREE.Mesh(leftTopGeometry, buildingMaterial);
+    leftTop.position.set(-width/2, height * 0.75, 0);
+    buildingGroup.add(leftTop);
+    collisionObjects.push(leftTop);
+    
+    // Bottom section of left wall
+    const leftBottomGeometry = new THREE.BoxGeometry(wallThickness, height/2 - 0.75, depth);
+    const leftBottom = new THREE.Mesh(leftBottomGeometry, buildingMaterial);
+    leftBottom.position.set(-width/2, (height/2 - 0.75)/2, 0);
+    buildingGroup.add(leftBottom);
+    collisionObjects.push(leftBottom);
+    
+    // Front section of left wall
+    const leftFrontGeometry = new THREE.BoxGeometry(wallThickness, 0.75, (depth - 2)/2);
+    const leftFront = new THREE.Mesh(leftFrontGeometry, buildingMaterial);
+    leftFront.position.set(-width/2, height/2, (depth - 2)/4);
+    buildingGroup.add(leftFront);
+    collisionObjects.push(leftFront);
+    
+    // Back section of left wall
+    const leftBackGeometry = new THREE.BoxGeometry(wallThickness, 0.75, (depth - 2)/2);
+    const leftBack = new THREE.Mesh(leftBackGeometry, buildingMaterial);
+    leftBack.position.set(-width/2, height/2, -(depth - 2)/4);
+    buildingGroup.add(leftBack);
+    collisionObjects.push(leftBack);
+    
+    // Right wall (with doorway)
+    const rightWallGroup = new THREE.Group();
+    
+    // Top section of right wall - RAISED HIGHER
+    const rightTopGeometry = new THREE.BoxGeometry(wallThickness, height/4, depth);
+    const rightTop = new THREE.Mesh(rightTopGeometry, buildingMaterial);
+    rightTop.position.set(width/2, height * 0.875, 0);
+    rightWallGroup.add(rightTop);
+    collisionObjects.push(rightTop);
+    
+    // Front section of right wall
+    const rightFrontGeometry = new THREE.BoxGeometry(wallThickness, height, depth/2 - 1);
+    const rightFront = new THREE.Mesh(rightFrontGeometry, buildingMaterial);
+    rightFront.position.set(width/2, height/2, depth/4 + 0.5);
+    rightWallGroup.add(rightFront);
+    collisionObjects.push(rightFront);
+    
+    // Back section of right wall
+    const rightBackGeometry = new THREE.BoxGeometry(wallThickness, height, depth/2 - 1);
+    const rightBack = new THREE.Mesh(rightBackGeometry, buildingMaterial);
+    rightBack.position.set(width/2, height/2, -depth/4 - 0.5);
+    rightWallGroup.add(rightBack);
+    collisionObjects.push(rightBack);
+    
+    // Roof
+    const roofGeometry = new THREE.BoxGeometry(width + 0.5, wallThickness, depth + 0.5);
+    const roof = new THREE.Mesh(roofGeometry, buildingMaterial);
+    roof.position.set(0, height, 0);
+    buildingGroup.add(roof);
+    collisionObjects.push(roof);
+    
+    // Add all wall groups to the building
+    buildingGroup.add(frontWallGroup);
+    buildingGroup.add(rightWallGroup);
+    
+    // Add building to scene
+    scene.add(buildingGroup);
+    
+    // Create an invisible box to check if enemies are inside the building
+    const buildingBounds = new THREE.Box3(
+        new THREE.Vector3(-width/2, 0, -depth/2),
+        new THREE.Vector3(width/2, height, depth/2)
+    );
+    
+    // Store the building bounds for enemy spawn checking
+    gameState.buildingBounds = buildingBounds;
+    
+    debugLog('Central building created');
+}
+
 function createEnvironment() {
     debugLog('Creating environment');
     // Floor
@@ -323,6 +490,12 @@ function createEnvironment() {
         scene.add(axesHelper);
     }
     
+    // Create central building with doorways and windows
+    createCentralBuilding();
+    
+    // Store all building bounds for enemy spawn checking
+    const allBuildingBounds = [gameState.buildingBounds];
+    
     // Add some cartoon-style obstacles and decorations
     for (let i = 0; i < 10; i++) {
         // Generate random buildings
@@ -338,29 +511,88 @@ function createEnvironment() {
         const building = new THREE.Mesh(buildingGeometry, buildingMaterial);
         building.position.x = Math.random() * 40 - 20;
         building.position.z = Math.random() * 40 - 20;
+        
+        // Make sure random buildings don't overlap with central building
+        if (Math.abs(building.position.x) < 8 && Math.abs(building.position.z) < 8) {
+            building.position.x = building.position.x > 0 ? building.position.x + 8 : building.position.x - 8;
+            building.position.z = building.position.z > 0 ? building.position.z + 8 : building.position.z - 8;
+        }
+        
         building.position.y = height / 2;
         building.castShadow = true;
         building.receiveShadow = true;
         
+        // Add to collision objects
+        collisionObjects.push(building);
+        
+        // Create a bounding box for this building
+        const buildingBounds = new THREE.Box3();
+        buildingBounds.setFromObject(building);
+        allBuildingBounds.push(buildingBounds);
+        
         scene.add(building);
         debugLog(`Added building at ${building.position.x}, ${building.position.y}, ${building.position.z}`);
     }
+    
+    // Store all building bounds for enemy spawn checking
+    gameState.allBuildingBounds = allBuildingBounds;
 }
 
 function spawnEnemies() {
     debugLog('Spawning enemies');
+    
+    // Only show round notification if it exists
+    if (roundNotification) {
+        showRoundNotification(gameState.level);
+    }
+    
     // Create cartoon-style enemies inspired by old Mickey cartoons
     for (let i = 0; i < 5; i++) {
         const enemy = createEnemy();
-        enemy.position.x = Math.random() * 30 - 15;
-        enemy.position.z = Math.random() * 30 - 15;
-        enemy.position.y = 0.8;
+        
+        // Generate random position
+        let validPosition = false;
+        let position = new THREE.Vector3();
+        
+        // Keep trying until we find a valid position outside all buildings
+        let attempts = 0;
+        while (!validPosition && attempts < 50) {
+            attempts++;
+            position.x = Math.random() * 30 - 15;
+            position.z = Math.random() * 30 - 15;
+            position.y = 0.8;
+            
+            // Check if position is inside any building
+            let insideAnyBuilding = false;
+            
+            if (gameState.allBuildingBounds) {
+                for (const bounds of gameState.allBuildingBounds) {
+                    if (bounds.containsPoint(position)) {
+                        // Position is inside a building, try again
+                        insideAnyBuilding = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (!insideAnyBuilding) {
+                // Position is valid
+                validPosition = true;
+            }
+        }
+        
+        if (!validPosition) {
+            debugLog('Could not find valid position for enemy after 50 attempts');
+            continue; // Skip this enemy if we can't find a valid position
+        }
+        
+        enemy.position.copy(position);
         scene.add(enemy);
         enemies.push({
             mesh: enemy,
             health: 100,
-            speed: 0.03 + Math.random() * 0.02,
-            bounceOffset: Math.random() * Math.PI * 2 // For bouncy animation
+            speed: 0.02,
+            bounceOffset: Math.random() * Math.PI * 2
         });
         debugLog(`Added enemy at ${enemy.position.x}, ${enemy.position.y}, ${enemy.position.z}`);
     }
@@ -438,7 +670,8 @@ function shoot() {
     
     if (intersects.length > 0) {
         const hitObject = intersects[0].object;
-        // Find which enemy was hit
+        
+        // Check if we hit an enemy
         for (let i = 0; i < enemies.length; i++) {
             if (enemies[i].mesh.children.includes(hitObject) || enemies[i].mesh === hitObject) {
                 enemies[i].health -= 50;
@@ -462,12 +695,17 @@ function shoot() {
                     scene.remove(enemies[i].mesh);
                     enemies.splice(i, 1);
                     gameState.score += 100;
+                    updateUI(); // Update UI to show new score
                     
                     // Check if all enemies are defeated
                     if (enemies.length === 0) {
                         gameState.level++;
                         gameState.ammo += 5;
-                        spawnEnemies();
+                        
+                        // Delay spawning new enemies to give player a moment to breathe
+                        setTimeout(() => {
+                            spawnEnemies();
+                        }, 2000);
                     }
                 }
                 break;
@@ -480,6 +718,11 @@ function updateUI() {
     healthEl.textContent = `❤️ ${gameState.health}`;
     ammoEl.textContent = `🔫 ${gameState.ammo}/${gameState.maxAmmo}`;
     bulletsEl.textContent = `🔹 Bullets: ${gameState.bullets}`;
+    
+    // Update score display
+    if (scoreDisplay) {
+        scoreDisplay.textContent = `Score: ${gameState.score}`;
+    }
     
     // Update inventory UI
     document.getElementById('inv-bullets').textContent = gameState.bullets;
@@ -498,7 +741,10 @@ function restartGame() {
         score: 0,
         gameOver: false,
         showInventory: false,
-        soundEnabled: true
+        soundEnabled: gameState.soundEnabled, // Preserve sound setting
+        brokenWindows: [], // Reset broken windows
+        lastHitTime: 0, // Reset last hit time
+        showingRoundMessage: false // Reset round message tracking
     };
     
     // Remove all enemies
@@ -530,6 +776,15 @@ function restartGame() {
 function checkGameOver() {
     if (gameState.health <= 0 && !gameState.gameOver) {
         gameState.gameOver = true;
+        
+        // Update game over screen with score and level
+        const gameOverEl = document.getElementById('gameOver');
+        const scoreEl = document.getElementById('finalScore');
+        const levelEl = document.getElementById('finalLevel');
+        
+        if (scoreEl) scoreEl.textContent = gameState.score;
+        if (levelEl) levelEl.textContent = gameState.level;
+        
         gameOverEl.style.display = 'block';
         controls.unlock();
     }
@@ -558,9 +813,35 @@ function animate() {
         if (moveLeft || moveRight) velocity.x = direction.x * 5.0;
         else velocity.x = 0;
         
+        // Store original position for collision detection
+        const originalPosition = camera.position.clone();
+        
         // Update controls
         controls.moveRight(velocity.x * delta);
         controls.moveForward(velocity.z * delta);
+        
+        // Check for collisions with buildings
+        const playerRadius = 0.5; // Player collision radius
+        let collision = false;
+        
+        for (const object of collisionObjects) {
+            // Create a bounding box for the object
+            const objectBox = new THREE.Box3().setFromObject(object);
+            
+            // Create a sphere for the player
+            const playerSphere = new THREE.Sphere(camera.position, playerRadius);
+            
+            // Check for collision
+            if (objectBox.intersectsSphere(playerSphere)) {
+                collision = true;
+                break;
+            }
+        }
+        
+        // If collision detected, revert to original position
+        if (collision) {
+            camera.position.copy(originalPosition);
+        }
         
         // Simple collision detection with ground
         if (camera.position.y < 1.6) {
@@ -597,9 +878,39 @@ function animate() {
             const direction = new THREE.Vector3();
             direction.subVectors(camera.position, enemy.mesh.position).normalize();
             
+            // Store original position for collision detection
+            const originalEnemyPosition = enemy.mesh.position.clone();
+            
             // Move enemy towards player
-            enemy.mesh.position.x += direction.x * enemy.speed;
-            enemy.mesh.position.z += direction.z * enemy.speed;
+            const newPosition = enemy.mesh.position.clone();
+            newPosition.x += direction.x * enemy.speed;
+            newPosition.z += direction.z * enemy.speed;
+            
+            // Check for collisions with buildings
+            let enemyCollision = false;
+            const enemyRadius = 0.5; // Enemy collision radius
+            
+            // Temporarily update position to check collision
+            enemy.mesh.position.copy(newPosition);
+            
+            for (const object of collisionObjects) {
+                // Create a bounding box for the object
+                const objectBox = new THREE.Box3().setFromObject(object);
+                
+                // Create a sphere for the enemy
+                const enemySphere = new THREE.Sphere(enemy.mesh.position, enemyRadius);
+                
+                // Check for collision
+                if (objectBox.intersectsSphere(enemySphere)) {
+                    enemyCollision = true;
+                    break;
+                }
+            }
+            
+            // If collision detected, revert to original position
+            if (enemyCollision) {
+                enemy.mesh.position.copy(originalEnemyPosition);
+            }
             
             // Bouncy cartoon animation
             enemy.mesh.position.y = 0.8 + Math.sin(time * 0.005 + enemy.bounceOffset) * 0.1;
@@ -607,12 +918,11 @@ function animate() {
             // Rotate enemy to face player
             enemy.mesh.lookAt(camera.position);
             
-            // Check for collision with player
-            const distance = enemy.mesh.position.distanceTo(camera.position);
-            if (distance < 1.0) {
-                gameState.health -= 1;
-                updateUI();
-                checkGameOver();
+            // Check if enemy is close to player
+            const distanceToPlayer = enemy.mesh.position.distanceTo(camera.position);
+            if (distanceToPlayer < 1.5) {
+                // Use the new damage function instead of directly modifying health
+                playerTakeDamage(1, enemy.mesh.position);
             }
         }
         
@@ -687,7 +997,6 @@ if (!webGLStatus.supported) {
     }
     
     // Start the game
-    updateUI();
     animate();
     
     // Log successful setup
@@ -981,3 +1290,154 @@ spawnBulletPickups();
 document.addEventListener('mousedown', (event) => {
     debugLog(`Mouse button pressed: ${event.button}`);
 }, true); // Use capture phase to ensure this runs first
+
+// Create a red halo effect for player damage
+function createDamageOverlay() {
+    const overlayEl = document.createElement('div');
+    overlayEl.id = 'damageOverlay';
+    overlayEl.style.position = 'absolute';
+    overlayEl.style.top = '0';
+    overlayEl.style.left = '0';
+    overlayEl.style.width = '100%';
+    overlayEl.style.height = '100%';
+    overlayEl.style.backgroundColor = 'rgba(255, 0, 0, 0)';
+    overlayEl.style.pointerEvents = 'none';
+    overlayEl.style.transition = 'background-color 0.1s ease-in, background-color 0.5s ease-out';
+    overlayEl.style.zIndex = '1000';
+    
+    document.getElementById('ui').appendChild(overlayEl);
+    return overlayEl;
+}
+
+// Initialize damage overlay
+const damageOverlay = createDamageOverlay();
+
+// Function to handle player damage
+function playerTakeDamage(amount, enemyPosition) {
+    // Only process damage if it's been at least 500ms since last hit
+    const now = performance.now();
+    if (now - gameState.lastHitTime < 500) return;
+    
+    gameState.lastHitTime = now;
+    // Increase damage from 1 to 5
+    gameState.health -= amount * 5;
+    
+    // Play hurt sound
+    playSound('playerHurt');
+    
+    // Show damage overlay
+    damageOverlay.style.backgroundColor = 'rgba(255, 0, 0, 0.3)';
+    setTimeout(() => {
+        damageOverlay.style.backgroundColor = 'rgba(255, 0, 0, 0)';
+    }, 500);
+    
+    // Push player away from enemy
+    if (enemyPosition) {
+        const pushDirection = new THREE.Vector3();
+        const playerPosition = new THREE.Vector3();
+        camera.getWorldPosition(playerPosition);
+        
+        // Calculate direction from enemy to player (to push player away)
+        pushDirection.subVectors(playerPosition, enemyPosition).normalize();
+        
+        // Increase push force from 5.0 to 8.0 for more noticeable knockback
+        const pushStrength = 8.0;
+        velocity.x += pushDirection.x * pushStrength;
+        velocity.z += pushDirection.z * pushStrength;
+        
+        // Add a stronger upward push for a more dramatic "knock-back" effect
+        velocity.y += 2.0;
+    }
+    
+    // Update UI
+    updateUI();
+    
+    // Check if player is dead
+    checkGameOver();
+}
+
+// Create a round notification display
+function createRoundNotification() {
+    const roundEl = document.createElement('div');
+    roundEl.id = 'roundNotification';
+    roundEl.style.position = 'absolute';
+    roundEl.style.top = '50%';
+    roundEl.style.left = '50%';
+    roundEl.style.transform = 'translate(-50%, -50%)';
+    roundEl.style.fontSize = '48px';
+    roundEl.style.fontWeight = 'bold';
+    roundEl.style.color = 'white';
+    roundEl.style.textShadow = '2px 2px 4px #000000';
+    roundEl.style.textAlign = 'center';
+    roundEl.style.opacity = '0';
+    roundEl.style.transition = 'opacity 0.5s ease-in-out';
+    roundEl.style.pointerEvents = 'none';
+    roundEl.style.zIndex = '1001';
+    
+    document.getElementById('ui').appendChild(roundEl);
+    return roundEl;
+}
+
+// Create a score display
+function createScoreDisplay() {
+    const scoreEl = document.createElement('div');
+    scoreEl.id = 'scoreDisplay';
+    scoreEl.style.position = 'absolute';
+    scoreEl.style.top = '20px';
+    scoreEl.style.left = '50%';
+    scoreEl.style.transform = 'translateX(-50%)';
+    scoreEl.style.fontSize = '24px';
+    scoreEl.style.color = 'white';
+    scoreEl.style.textShadow = '1px 1px 2px #000000';
+    scoreEl.style.pointerEvents = 'none';
+    
+    document.getElementById('ui').appendChild(scoreEl);
+    return scoreEl;
+}
+
+// Initialize UI elements - moved to the top level
+let roundNotification;
+let scoreDisplay;
+
+// Show round notification
+function showRoundNotification(round) {
+    if (!roundNotification || gameState.showingRoundMessage) return;
+    
+    gameState.showingRoundMessage = true;
+    roundNotification.textContent = `ROUND ${round}`;
+    roundNotification.style.opacity = '1';
+    
+    // Hide after 3 seconds
+    setTimeout(() => {
+        roundNotification.style.opacity = '0';
+        setTimeout(() => {
+            gameState.showingRoundMessage = false;
+        }, 500);
+    }, 3000);
+}
+
+// Initialize the game
+function init() {
+    if (!checkWebGLSupport()) {
+        document.getElementById('webgl-error').style.display = 'block';
+        return;
+    }
+    
+    // Initialize UI elements
+    roundNotification = createRoundNotification();
+    scoreDisplay = createScoreDisplay();
+    
+    // Update UI after elements are initialized
+    updateUI();
+    
+    // Spawn initial enemies
+    spawnEnemies();
+    
+    // Initialize the game
+    animate();
+    
+    debugLog('Game initialized successfully!');
+}
+
+// Initialize the game
+init();
