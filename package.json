@@ -1,7 +1,7 @@
 {
-  "name": "classic-toon-fps",
+  "name": "classic-survivor-fps",
   "version": "1.0.0",
-  "description": "A classic cartoon style FPS roguelite game",
+  "description": "A classic survivor FPS game",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

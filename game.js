@@ -124,7 +124,8 @@ const soundEffects = {
     explosion: new THREE.Audio(audioListener), // New sound for explosions
     shotgunBlast: new THREE.Audio(audioListener), // New sound for shotgun
     rocketLaunch: new THREE.Audio(audioListener), // New sound for rocket launcher
-    teleport: new THREE.Audio(audioListener) // New sound for teleportation
+    teleport: new THREE.Audio(audioListener), // New sound for teleportation
+    thud: new THREE.Audio(audioListener) // New sound for club swing
 };
 
 // Audio loader
@@ -186,6 +187,12 @@ function loadSoundEffects() {
     audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1145/1145-preview.mp3', function(buffer) {
         soundEffects.teleport.setBuffer(buffer);
         soundEffects.teleport.setVolume(0.5);
+    });
+    
+    // Club swing sound effect
+    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1146/1146-preview.mp3', function(buffer) {
+        soundEffects.thud.setBuffer(buffer);
+        soundEffects.thud.setVolume(0.5);
     });
 }
 
@@ -677,10 +684,14 @@ function spawnEnemies() {
     // Start with 0 ninjas in waves 1-3, then 1 in wave 4, and increase by 2 each wave
     const ninjaCount = gameState.level > 3 ? 1 + (gameState.level - 4) * 2 : 0;
     
-    // Calculate regular enemy count (total minus special types)
-    const regularEnemyCount = enemyCount - spiderCount - flyingCount - ninjaCount;
+    // Calculate number of cyclops enemies (only appear after wave 4)
+    // Start with 0 cyclops in waves 1-4, then 1 in wave 5, and increase by 1 each wave
+    const cyclopsCount = gameState.level > 4 ? 1 + (gameState.level - 5) : 0;
     
-    debugLog(`Spawning ${regularEnemyCount} regular enemies, ${spiderCount} spider enemies, ${flyingCount} flying enemies, and ${ninjaCount} ninja enemies`);
+    // Calculate regular enemy count (total minus special types)
+    const regularEnemyCount = enemyCount - spiderCount - flyingCount - ninjaCount - cyclopsCount;
+    
+    debugLog(`Spawning ${regularEnemyCount} regular enemies, ${spiderCount} spider enemies, ${flyingCount} flying enemies, ${ninjaCount} ninja enemies, and ${cyclopsCount} cyclops enemies`);
     
     // Spawn regular enemies
     for (let i = 0; i < regularEnemyCount; i++) {
@@ -700,6 +711,11 @@ function spawnEnemies() {
     // Spawn ninja enemies (after wave 3)
     for (let i = 0; i < ninjaCount; i++) {
         spawnEnemy('ninja');
+    }
+    
+    // Spawn cyclops enemies (after wave 4)
+    for (let i = 0; i < cyclopsCount; i++) {
+        spawnEnemy('cyclops');
     }
 }
 
@@ -2029,6 +2045,9 @@ function spawnEnemy(type) {
         case 'ninja':
             enemy = createNinjaEnemy();
             break;
+        case 'cyclops':
+            enemy = createCyclopsEnemy();
+            break;
         default:
             enemy = createEnemy();
             break;
@@ -2096,6 +2115,12 @@ function spawnEnemy(type) {
             health = 80; // Ninjas have medium health
             bounceAmount = 0.05; // Ninjas bounce very little
             flyHeight = 0; // Ninjas don't fly
+            break;
+        case 'cyclops':
+            baseSpeed = 0.015; // Cyclops are slow but powerful
+            health = 200; // Cyclops have high health
+            bounceAmount = 0.03; // Cyclops barely bounce
+            flyHeight = 0; // Cyclops don't fly
             break;
         default: // Regular enemies
             baseSpeed = 0.022;
@@ -2505,6 +2530,69 @@ function animate() {
                             // Also rotate slightly on other axes for a more dynamic slash
                             enemy.mesh.userData.katana.rotation.x = Math.sin(slashProgress * Math.PI * 2) * 0.5;
                             enemy.mesh.userData.katana.rotation.y = Math.cos(slashProgress * Math.PI) * 0.3;
+                        }
+                    }
+                }
+                
+                // Always face the player
+                enemy.mesh.lookAt(camera.position);
+            }
+            
+            // Special handling for cyclops enemies - club swing attack
+            if (enemy.type === 'cyclops') {
+                const currentTime = performance.now();
+                
+                // Handle club swinging animation
+                const timeSinceLastSwing = currentTime - enemy.mesh.userData.lastSwingTime;
+                
+                // Check if cyclops is close enough to player to swing club
+                const distanceToPlayer = enemy.mesh.position.distanceTo(camera.position);
+                
+                // If not currently swinging, check if it's time to swing
+                if (!enemy.mesh.userData.isSwinging) {
+                    // Swing when close to player and cooldown has passed
+                    if (distanceToPlayer < 5 && timeSinceLastSwing > enemy.mesh.userData.swingCooldown) {
+                        // Start swing animation
+                        enemy.mesh.userData.isSwinging = true;
+                        enemy.mesh.userData.swingStartTime = currentTime;
+                        
+                        // Create club swing effect
+                        createClubSwingEffect(enemy.mesh.position.clone(), directionToPlayer);
+                        
+                        // Deal heavy damage to player if close enough
+                        if (distanceToPlayer < 4) {
+                            playerTakeDamage(25, enemy.mesh.position);
+                            
+                            // Add screen shake for impact
+                            cameraShake = 0.3;
+                            
+                            // Add knockback effect to player
+                            const knockbackForce = directionToPlayer.clone().normalize().multiplyScalar(5);
+                            velocity.add(knockbackForce);
+                        }
+                    }
+                } else {
+                    // Currently swinging, animate the club
+                    const swingProgress = (currentTime - enemy.mesh.userData.swingStartTime) / enemy.mesh.userData.swingDuration;
+                    
+                    if (swingProgress >= 1) {
+                        // Swing animation complete
+                        enemy.mesh.userData.isSwinging = false;
+                        enemy.mesh.userData.lastSwingTime = currentTime;
+                        
+                        // Reset club to base rotation
+                        if (enemy.mesh.userData.club) {
+                            enemy.mesh.userData.club.rotation.copy(enemy.mesh.userData.clubBaseRotation);
+                        }
+                    } else {
+                        // Animate club swing
+                        if (enemy.mesh.userData.club) {
+                            // Swing the club in an arc
+                            const swingAngle = Math.PI * 1.2 * Math.sin(swingProgress * Math.PI);
+                            enemy.mesh.userData.club.rotation.z = enemy.mesh.userData.clubBaseRotation.z + swingAngle;
+                            
+                            // Also rotate the cyclops body slightly for more impact
+                            enemy.mesh.rotation.y = Math.sin(swingProgress * Math.PI) * 0.5;
                         }
                     }
                 }
@@ -4172,6 +4260,157 @@ function createNinjaEnemy() {
     return body;
 }
 
+// Create a giant cyclops enemy with a club
+function createCyclopsEnemy() {
+    // Create the cyclops group
+    const cyclopsGroup = new THREE.Group();
+    
+    // Body - large and bulky
+    const bodyGeometry = new THREE.SphereGeometry(0.8, 16, 16);
+    const bodyMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x8B4513, // Brown body
+        shininess: 10,
+        specular: 0x333333
+    });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    body.scale.set(1, 1.2, 0.8); // Make body oval-shaped
+    cyclopsGroup.add(body);
+    
+    // Head - large with single eye
+    const headGeometry = new THREE.SphereGeometry(0.6, 16, 16);
+    const headMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x8B4513, // Same color as body
+        shininess: 10,
+        specular: 0x333333
+    });
+    const head = new THREE.Mesh(headGeometry, headMaterial);
+    head.position.set(0, 1.1, 0);
+    cyclopsGroup.add(head);
+    
+    // Single eye - large and menacing
+    const eyeGeometry = new THREE.SphereGeometry(0.2, 16, 16);
+    const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xff9900 }); // Orange eye
+    const eye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    eye.position.set(0, 1.2, 0.4);
+    cyclopsGroup.add(eye);
+    
+    // Pupil
+    const pupilGeometry = new THREE.SphereGeometry(0.08, 8, 8);
+    const pupilMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    const pupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+    pupil.position.set(0, 0, 0.15);
+    eye.add(pupil);
+    
+    // Arms
+    const armGeometry = new THREE.CylinderGeometry(0.2, 0.15, 1.2, 8);
+    const armMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x8B4513,
+        shininess: 10,
+        specular: 0x333333
+    });
+    
+    // Left arm
+    const leftArm = new THREE.Mesh(armGeometry, armMaterial);
+    leftArm.position.set(-0.9, 0.4, 0);
+    leftArm.rotation.z = Math.PI / 6; // Angle slightly outward
+    cyclopsGroup.add(leftArm);
+    
+    // Right arm (holds club)
+    const rightArm = new THREE.Mesh(armGeometry, armMaterial);
+    rightArm.position.set(0.9, 0.4, 0);
+    rightArm.rotation.z = -Math.PI / 6; // Angle slightly outward
+    cyclopsGroup.add(rightArm);
+    
+    // Club weapon
+    const clubGroup = new THREE.Group();
+    
+    // Club handle
+    const handleGeometry = new THREE.CylinderGeometry(0.08, 0.1, 1.5, 8);
+    const handleMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x4d2600, // Dark brown handle
+        shininess: 5
+    });
+    const handle = new THREE.Mesh(handleGeometry, handleMaterial);
+    clubGroup.add(handle);
+    
+    // Club head
+    const clubHeadGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+    const clubHeadMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x666666, // Gray club head
+        shininess: 20,
+        specular: 0x999999
+    });
+    const clubHead = new THREE.Mesh(clubHeadGeometry, clubHeadMaterial);
+    clubHead.position.set(0, 0.8, 0);
+    clubHead.scale.set(1, 1, 1);
+    clubGroup.add(clubHead);
+    
+    // Add spikes to club
+    for (let i = 0; i < 8; i++) {
+        const spikeGeometry = new THREE.ConeGeometry(0.06, 0.2, 4);
+        const spikeMaterial = new THREE.MeshPhongMaterial({ 
+            color: 0x999999, // Light gray spikes
+            shininess: 30,
+            specular: 0xCCCCCC
+        });
+        const spike = new THREE.Mesh(spikeGeometry, spikeMaterial);
+        
+        // Position spikes around the club head
+        const angle = (i / 8) * Math.PI * 2;
+        const radius = 0.3;
+        spike.position.set(
+            Math.sin(angle) * radius,
+            0.8,
+            Math.cos(angle) * radius
+        );
+        
+        // Point spikes outward
+        spike.rotation.x = Math.PI / 2;
+        spike.rotation.y = -angle;
+        
+        clubGroup.add(spike);
+    }
+    
+    // Position club in right hand
+    clubGroup.position.set(1.3, 0.4, 0.2);
+    clubGroup.rotation.set(0, 0, -Math.PI / 4);
+    cyclopsGroup.add(clubGroup);
+    
+    // Store club reference for animation
+    cyclopsGroup.userData.club = clubGroup;
+    cyclopsGroup.userData.clubBaseRotation = clubGroup.rotation.clone();
+    cyclopsGroup.userData.isSwinging = false;
+    cyclopsGroup.userData.swingStartTime = 0;
+    cyclopsGroup.userData.swingDuration = 800; // 0.8 seconds for swing animation
+    
+    // Legs
+    const legGeometry = new THREE.CylinderGeometry(0.25, 0.2, 1.0, 8);
+    const legMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x8B4513,
+        shininess: 10,
+        specular: 0x333333
+    });
+    
+    // Left leg
+    const leftLeg = new THREE.Mesh(legGeometry, legMaterial);
+    leftLeg.position.set(-0.4, -1.0, 0);
+    cyclopsGroup.add(leftLeg);
+    
+    // Right leg
+    const rightLeg = new THREE.Mesh(legGeometry, legMaterial);
+    rightLeg.position.set(0.4, -1.0, 0);
+    cyclopsGroup.add(rightLeg);
+    
+    // Initialize club swing attack properties
+    cyclopsGroup.userData.lastSwingTime = performance.now();
+    cyclopsGroup.userData.swingCooldown = 3000 + Math.random() * 1000; // 3-4 seconds between swings
+    
+    // Make cyclops larger than other enemies
+    cyclopsGroup.scale.set(1.5, 1.5, 1.5);
+    
+    return cyclopsGroup;
+}
+
 // Create a visual slash effect
 function createSlashEffect(position, direction) {
     // Create a group for the slash effect
@@ -4240,4 +4479,121 @@ function createSlashEffect(position, direction) {
     }
     
     animateSlash();
+}
+
+// Create a visual club swing effect
+function createClubSwingEffect(position, direction) {
+    // Create a group for the club swing effect
+    const swingGroup = new THREE.Group();
+    
+    // Create a shockwave-like effect
+    const shockwaveGeometry = new THREE.RingGeometry(0.5, 2.5, 32);
+    const shockwaveMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xffcc00, 
+        transparent: true, 
+        opacity: 0.7,
+        side: THREE.DoubleSide
+    });
+    const shockwave = new THREE.Mesh(shockwaveGeometry, shockwaveMaterial);
+    
+    // Orient the shockwave to face the direction
+    shockwave.lookAt(direction);
+    shockwave.position.copy(position);
+    
+    // Add some dust particles
+    const particleCount = 15;
+    const particles = [];
+    
+    for (let i = 0; i < particleCount; i++) {
+        const particleGeometry = new THREE.SphereGeometry(0.1 + Math.random() * 0.2, 8, 8);
+        const particleMaterial = new THREE.MeshBasicMaterial({
+            color: 0xbbbbbb, // Gray dust
+            transparent: true,
+            opacity: 0.7
+        });
+        
+        const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+        
+        // Position particles in a cone shape in front of the club
+        const angle = Math.random() * Math.PI / 2 - Math.PI / 4;
+        const radius = 1 + Math.random() * 2;
+        
+        // Calculate position relative to the direction
+        const particleDir = direction.clone();
+        particleDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+        particleDir.multiplyScalar(radius);
+        
+        particle.position.copy(position).add(particleDir);
+        particle.position.y += Math.random() * 1 - 0.5; // Vary height
+        
+        particles.push({
+            mesh: particle,
+            velocity: particleDir.clone().normalize().multiplyScalar(0.05 + Math.random() * 0.1),
+            gravity: 0.002 + Math.random() * 0.002
+        });
+        
+        swingGroup.add(particle);
+    }
+    
+    // Add impact marks
+    const impactGeometry = new THREE.CircleGeometry(0.3 + Math.random() * 0.2, 8);
+    const impactMaterial = new THREE.MeshBasicMaterial({
+        color: 0x333333,
+        transparent: true,
+        opacity: 0.8,
+        side: THREE.DoubleSide
+    });
+    
+    const impact = new THREE.Mesh(impactGeometry, impactMaterial);
+    impact.position.copy(position).add(direction.clone().multiplyScalar(2));
+    impact.lookAt(position);
+    impact.position.y = 0.05; // Just above ground
+    swingGroup.add(impact);
+    
+    scene.add(swingGroup);
+    
+    // Animate the club swing effect
+    function animateSwing() {
+        const elapsed = (performance.now() - startTime) / 1000;
+        
+        if (elapsed > 1.0) {
+            // Remove the effect after 1 second
+            scene.remove(swingGroup);
+            return;
+        }
+        
+        // Fade out the shockwave and expand it
+        const scale = 1 + elapsed * 2;
+        shockwave.scale.set(scale, scale, scale);
+        shockwave.material.opacity = 0.7 * (1 - elapsed);
+        
+        // Animate particles
+        for (const particle of particles) {
+            // Apply gravity
+            particle.velocity.y -= particle.gravity;
+            
+            // Move particle
+            particle.mesh.position.add(particle.velocity);
+            
+            // Fade out particle
+            particle.mesh.material.opacity = 0.7 * (1 - elapsed);
+            
+            // Shrink particle
+            const particleScale = 1 - elapsed * 0.5;
+            particle.mesh.scale.set(particleScale, particleScale, particleScale);
+        }
+        
+        // Fade out impact mark
+        impact.material.opacity = 0.8 * (1 - elapsed);
+        
+        requestAnimationFrame(animateSwing);
+    }
+    
+    const startTime = performance.now();
+    animateSwing();
+    
+    // Play club swing sound
+    playSound('thud', 0.5);
+    
+    return swingGroup;
 }
