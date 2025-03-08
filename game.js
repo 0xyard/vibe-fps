@@ -56,7 +56,28 @@ const soundToggleEl = document.getElementById('soundToggle');
 
 // Scene setup
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xf0f0f0); // Light background for cartoon look
+scene.background = new THREE.Color(0x87CEEB); // Sky blue background
+
+// Add a sun sphere to represent the light source
+function createSun() {
+    const sunGeometry = new THREE.SphereGeometry(5, 32, 32);
+    const sunMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0xffff00,
+        emissive: 0xffff00,
+        emissiveIntensity: 1,
+        shininess: 100
+    });
+    const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+    
+    // Position the sun at the same position as the directional light
+    sun.position.set(20, 30, 20);
+    scene.add(sun);
+    
+    return sun;
+}
+
+// Create the sun
+const sun = createSun();
 
 // Camera setup
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -66,6 +87,8 @@ camera.position.y = 1.6; // Eye level
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadows
+renderer.outputEncoding = THREE.sRGBEncoding; // Better color rendering
 document.body.appendChild(renderer.domElement);
 
 // Controls setup
@@ -99,8 +122,32 @@ const ambientLight = new THREE.AmbientLight(0xffffff, 0.8); // Increased intensi
 scene.add(ambientLight);
 
 const dirLight = new THREE.DirectionalLight(0xffffff, 1.0); // Increased intensity
-dirLight.position.set(5, 10, 5);
+dirLight.position.set(20, 30, 20); // Position higher and further away for better shadow angles
 dirLight.castShadow = true;
+
+// Configure shadow properties
+dirLight.shadow.mapSize.width = 2048;  // Higher resolution shadows
+dirLight.shadow.mapSize.height = 2048;
+dirLight.shadow.camera.near = 0.5;
+dirLight.shadow.camera.far = 100;
+dirLight.shadow.camera.left = -50;
+dirLight.shadow.camera.right = 50;
+dirLight.shadow.camera.top = 50;
+dirLight.shadow.camera.bottom = -50;
+dirLight.shadow.bias = -0.0005; // Reduce shadow acne
+
+// Create a visual target for the light to look at
+const lightTarget = new THREE.Object3D();
+lightTarget.position.set(0, 0, 0);
+scene.add(lightTarget);
+dirLight.target = lightTarget;
+
+// Add shadow camera helper for debugging
+if (DEBUG) {
+    const shadowHelper = new THREE.CameraHelper(dirLight.shadow.camera);
+    scene.add(shadowHelper);
+}
+
 scene.add(dirLight);
 
 // Add a hemisphere light for better overall lighting
@@ -522,9 +569,17 @@ function createRandomBlocks(count = 15) {
         const color = colors[Math.floor(Math.random() * colors.length)];
         
         const blockGeometry = new THREE.BoxGeometry(width, height, depth);
-        const blockMaterial = new THREE.MeshBasicMaterial({ color: color });
+        const blockMaterial = new THREE.MeshStandardMaterial({ 
+            color: color,
+            roughness: 0.7,
+            metalness: 0.2
+        });
         
         const block = new THREE.Mesh(blockGeometry, blockMaterial);
+        
+        // Enable shadows
+        block.castShadow = true;
+        block.receiveShadow = true;
         
         // Random position - expanded for larger map
         let validPosition = false;
@@ -599,7 +654,12 @@ function createEnvironment() {
     
     // Floor
     const floorGeometry = new THREE.PlaneGeometry(mapWidth, mapDepth, 10, 10);
-    const floorMaterial = new THREE.MeshBasicMaterial({ color: 0xcccccc, side: THREE.DoubleSide });
+    const floorMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0xcccccc, 
+        side: THREE.DoubleSide,
+        roughness: 0.8,
+        metalness: 0.2
+    });
     const floor = new THREE.Mesh(floorGeometry, floorMaterial);
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = 0;
@@ -627,12 +687,18 @@ function createBoundaryWalls(mapWidth, mapDepth) {
     const wallHeight = 10;
     const wallThickness = 1;
     const wallColor = 0x888888;
-    const wallMaterial = new THREE.MeshBasicMaterial({ color: wallColor });
+    const wallMaterial = new THREE.MeshStandardMaterial({ 
+        color: wallColor,
+        roughness: 0.8,
+        metalness: 0.2
+    });
     
     // North wall
     const northWallGeometry = new THREE.BoxGeometry(mapWidth + wallThickness*2, wallHeight, wallThickness);
     const northWall = new THREE.Mesh(northWallGeometry, wallMaterial);
     northWall.position.set(0, wallHeight/2, -mapDepth/2 - wallThickness/2);
+    northWall.castShadow = true;
+    northWall.receiveShadow = true;
     scene.add(northWall);
     collisionObjects.push(northWall);
     
@@ -640,6 +706,8 @@ function createBoundaryWalls(mapWidth, mapDepth) {
     const southWallGeometry = new THREE.BoxGeometry(mapWidth + wallThickness*2, wallHeight, wallThickness);
     const southWall = new THREE.Mesh(southWallGeometry, wallMaterial);
     southWall.position.set(0, wallHeight/2, mapDepth/2 + wallThickness/2);
+    southWall.castShadow = true;
+    southWall.receiveShadow = true;
     scene.add(southWall);
     collisionObjects.push(southWall);
     
@@ -647,6 +715,8 @@ function createBoundaryWalls(mapWidth, mapDepth) {
     const eastWallGeometry = new THREE.BoxGeometry(wallThickness, wallHeight, mapDepth + wallThickness*2);
     const eastWall = new THREE.Mesh(eastWallGeometry, wallMaterial);
     eastWall.position.set(mapWidth/2 + wallThickness/2, wallHeight/2, 0);
+    eastWall.castShadow = true;
+    eastWall.receiveShadow = true;
     scene.add(eastWall);
     collisionObjects.push(eastWall);
     
@@ -654,6 +724,8 @@ function createBoundaryWalls(mapWidth, mapDepth) {
     const westWallGeometry = new THREE.BoxGeometry(wallThickness, wallHeight, mapDepth + wallThickness*2);
     const westWall = new THREE.Mesh(westWallGeometry, wallMaterial);
     westWall.position.set(-mapWidth/2 - wallThickness/2, wallHeight/2, 0);
+    westWall.castShadow = true;
+    westWall.receiveShadow = true;
     scene.add(westWall);
     collisionObjects.push(westWall);
     
@@ -725,30 +797,55 @@ function createEnemy() {
     
     // Body - classic "rubber hose" round body
     const bodyGeometry = new THREE.SphereGeometry(0.5, 16, 16);
-    const bodyMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 }); // Changed to BasicMaterial
+    const bodyMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x000000,
+        roughness: 0.7,
+        metalness: 0.3
+    });
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    body.castShadow = true;
+    body.receiveShadow = true;
     
     // Head
     const headGeometry = new THREE.SphereGeometry(0.3, 16, 16);
-    const headMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 }); // Changed to BasicMaterial
+    const headMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x000000,
+        roughness: 0.7,
+        metalness: 0.3
+    });
     const head = new THREE.Mesh(headGeometry, headMaterial);
     head.position.y = 0.5;
+    head.castShadow = true;
+    head.receiveShadow = true;
     
     // Ears - circular ears like in old cartoons
     const earGeometry = new THREE.CircleGeometry(0.2, 16);
-    const earMaterial = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide }); // Changed to BasicMaterial
+    const earMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x000000, 
+        side: THREE.DoubleSide,
+        roughness: 0.7,
+        metalness: 0.3
+    });
     
     const leftEar = new THREE.Mesh(earGeometry, earMaterial);
     leftEar.position.set(-0.2, 0.7, 0);
     leftEar.rotation.y = Math.PI / 2;
+    leftEar.castShadow = true;
     
     const rightEar = new THREE.Mesh(earGeometry, earMaterial);
     rightEar.position.set(0.2, 0.7, 0);
     rightEar.rotation.y = -Math.PI / 2;
+    rightEar.castShadow = true;
     
     // Eyes - classic pie-cut eyes
     const eyeGeometry = new THREE.CircleGeometry(0.05, 16);
-    const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+    const eyeMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0xffffff, 
+        side: THREE.DoubleSide,
+        roughness: 0.5,
+        metalness: 0.2,
+        emissive: 0x333333
+    });
     
     const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
     leftEye.position.set(-0.1, 0.55, 0.3);
@@ -2299,6 +2396,11 @@ function animate() {
     const time = performance.now();
     const delta = (time - prevTime) / 1000;
     prevTime = time;
+    
+    // Update sun position to match directional light
+    if (sun) {
+        sun.position.copy(dirLight.position);
+    }
     
     // Skip game logic if game is over, menu is open, or controls are not locked
     if (!gameState.gameOver && !gameState.menuOpen && controls.isLocked) {
