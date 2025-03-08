@@ -1837,24 +1837,24 @@ function updateBulletProjectiles(delta) {
                     
                     // Random drop chance
                     const dropRoll = Math.random();
-                    if (dropRoll < 0.2) {
-                        // 20% chance to drop health
+                    if (dropRoll < 0.1) {
+                        // 10% chance to drop health
                         healthPickups.push(createHealthPickup(enemyPosition));
                         debugLog('Enemy dropped health');
-                    // } else if (dropRoll < 0.3) {
-                    //     // 10% chance to drop machine gun
-                    //     machineGunPickups.push(createMachineGunPickup(enemyPosition));
-                    //     debugLog('Enemy dropped machine gun');
-                    // } else if (dropRoll < 0.35) {
-                    //     // 5% chance to drop sniper rifle (rare)
-                    //     sniperRiflePickups.push(createSniperRiflePickup(enemyPosition));
-                    //     debugLog('Enemy dropped sniper rifle');
-                    } else if (dropRoll <0.9) {
+                    } else if (dropRoll < 0.3) {
+                        // 20% chance to drop machine gun
+                        machineGunPickups.push(createMachineGunPickup(enemyPosition));
+                        debugLog('Enemy dropped machine gun');
+                    } else if (dropRoll < 0.35) {
+                        // 5% chance to drop sniper rifle (rare)
+                        sniperRiflePickups.push(createSniperRiflePickup(enemyPosition));
+                        debugLog('Enemy dropped sniper rifle');
+                    } else if (dropRoll < 0.4) {
                         // 5% chance to drop shotgun
                         shotgunPickups.push(createShotgunPickup(enemyPosition));
                         debugLog('Enemy dropped shotgun');
                     } else {
-                        // 58% chance to drop nothing
+                        // 40% chance to drop nothing
                         debugLog('Enemy dropped nothing');
                     }
                     
