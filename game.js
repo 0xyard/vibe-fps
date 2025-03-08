@@ -3351,25 +3351,33 @@ function createExplosion(position) {
         }
     }
     
-    // Check if player is in explosion radius
+    // Check if player is in explosion radius - but don't damage them
+    // We'll still apply screen shake for feedback
     const playerPosition = new THREE.Vector3();
     camera.getWorldPosition(playerPosition);
     const playerDistance = playerPosition.distanceTo(position);
     
     if (playerDistance <= explosionRadius) {
-        // Calculate damage based on distance (more damage closer to explosion)
-        const damageMultiplier = 1 - (playerDistance / explosionRadius);
-        const damage = Math.floor(explosionDamage * 0.5 * damageMultiplier); // Half damage to player
-        
-        // Apply damage to player
-        playerTakeDamage(damage, position);
-        
         // Apply screen shake based on proximity
         const shakeIntensity = 0.2 * (1 - (playerDistance / explosionRadius));
         gameState.currentRecoil = {
             x: (Math.random() - 0.5) * shakeIntensity,
             y: (Math.random() - 0.5) * shakeIntensity
         };
+        
+        // Add a visual effect to indicate the player is in the blast radius
+        // but not taking damage
+        const damageOverlay = document.getElementById('damageOverlay');
+        if (damageOverlay) {
+            damageOverlay.style.backgroundColor = 'rgba(255, 165, 0, 0.2)'; // Orange tint
+            damageOverlay.style.opacity = 0.5 * (1 - (playerDistance / explosionRadius));
+            
+            // Fade out the overlay
+            setTimeout(() => {
+                damageOverlay.style.opacity = 0;
+                damageOverlay.style.backgroundColor = 'rgba(255, 0, 0, 0.3)'; // Reset to red for normal damage
+            }, 300);
+        }
     }
     
     // Animation function
