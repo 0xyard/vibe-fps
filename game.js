@@ -1763,16 +1763,26 @@ function updateBulletProjectiles(delta) {
             bulletPosition.clone().sub(bullet.direction.clone().multiplyScalar(0.1)), // Start slightly behind current position
             bullet.direction.clone(),
             0,
-            0.2 // Check a short distance ahead
+            bullet.isRocket ? 0.5 : 0.2 // Check further ahead for rockets
         );
         
         const intersects = raycaster.intersectObjects(collisionObjects);
-        if (intersects.length > 0) {
-            // Bullet hit environment
+        
+        // Check if bullet hit the ground (y position near 0)
+        const hitGround = bulletPosition.y <= 0.1;
+        
+        if (intersects.length > 0 || hitGround) {
+            // Bullet hit environment or ground
             
             // Special handling for rockets - create explosion
             if (bullet.isRocket) {
-                createExplosion(bulletPosition.clone());
+                // Get the exact impact point
+                const impactPoint = intersects.length > 0 ? 
+                    intersects[0].point.clone() : 
+                    bulletPosition.clone().setY(0); // Set to ground level if hitting ground
+                
+                createExplosion(impactPoint);
+                playSound('explosion');
             } else {
                 // Create impact effect for regular bullets
                 createBulletImpact(bulletPosition, bullet.direction);
@@ -3390,6 +3400,72 @@ function createRocketProjectile(position, direction) {
     trail.rotation.x = Math.PI / 2;
     trail.position.z = 0.3; // Position behind the rocket
     rocketGroup.add(trail);
+    
+    // Add flame effect
+    const flameGeometry = new THREE.SphereGeometry(0.04, 8, 8);
+    const flameMaterial = new THREE.MeshBasicMaterial({
+        color: 0xFF4500,
+        transparent: true,
+        opacity: 0.9
+    });
+    const flame = new THREE.Mesh(flameGeometry, flameMaterial);
+    flame.position.z = 0.2; // Position at back of rocket
+    flame.scale.z = 1.5; // Elongate the flame
+    rocketGroup.add(flame);
+    
+    // Add smoke particles
+    const smokeParticles = [];
+    const smokeCount = 3;
+    
+    for (let i = 0; i < smokeCount; i++) {
+        const smokeGeometry = new THREE.SphereGeometry(0.03, 6, 6);
+        const smokeMaterial = new THREE.MeshBasicMaterial({
+            color: 0x888888,
+            transparent: true,
+            opacity: 0.5
+        });
+        const smoke = new THREE.Mesh(smokeGeometry, smokeMaterial);
+        smoke.position.z = 0.3 + (i * 0.1); // Position behind the rocket
+        smoke.userData.offset = i * 0.1; // Store offset for animation
+        smoke.userData.randomFactor = Math.random() * 0.02; // Random movement factor
+        rocketGroup.add(smoke);
+        smokeParticles.push(smoke);
+    }
+    
+    // Animate the flame and smoke
+    const animateRocket = () => {
+        if (!rocketGroup.parent) return; // Stop animation if rocket is removed
+        
+        // Flicker the flame
+        flame.scale.x = 0.8 + Math.random() * 0.4;
+        flame.scale.y = 0.8 + Math.random() * 0.4;
+        
+        // Animate smoke particles
+        smokeParticles.forEach(smoke => {
+            // Move smoke backward
+            smoke.position.z += 0.01;
+            
+            // Add some random movement
+            smoke.position.x += (Math.random() - 0.5) * smoke.userData.randomFactor;
+            smoke.position.y += (Math.random() - 0.5) * smoke.userData.randomFactor;
+            
+            // Fade out as it moves back
+            smoke.material.opacity = Math.max(0, 0.5 - (smoke.position.z - 0.3) * 0.5);
+            
+            // Reset smoke when it's too far back or faded out
+            if (smoke.position.z > 0.8 || smoke.material.opacity <= 0) {
+                smoke.position.z = 0.3;
+                smoke.position.x = 0;
+                smoke.position.y = 0;
+                smoke.material.opacity = 0.5;
+            }
+        });
+        
+        requestAnimationFrame(animateRocket);
+    };
+    
+    // Start animation
+    animateRocket();
     
     // Return rocket object with metadata
     return {
