@@ -22,11 +22,15 @@ let gameState = {
     showingRoundMessage: false, // Track if wave message is showing
     recoilActive: false, // Track if recoil is currently active
     recoilRecovery: 0, // Track recoil recovery progress
-    currentGunType: 'pistol', // Current gun type: 'pistol' or 'machineGun'
+    currentGunType: 'pistol', // Current gun type: 'pistol', 'machineGun', or 'sniperRifle'
     isReloading: false, // Track if the gun is currently reloading
     isMouseDown: false, // Track if mouse button is being held down
     cameraOriginalY: null, // Store original camera position for recoil recovery
-    currentRecoil: { x: 0, y: 0 } // Track recoil effect on bullets
+    currentRecoil: { x: 0, y: 0 }, // Track recoil effect on bullets
+    isZoomed: false, // Track if sniper scope is zoomed in
+    originalFOV: 75, // Store original FOV for zoom
+    lastPickupHintTime: 0, // Track when the last pickup hint was shown
+    nearbyPickup: null // Track the type of nearby pickup
 };
 
 // Array to store active bullet projectiles
@@ -67,12 +71,7 @@ let velocity = new THREE.Vector3();
 // Weapon setup
 let weapon;
 let machineGun;
-
-
-// Create fist for melee attack
-const fist = createFist();
-fist.visible = false; // Hide initially
-camera.add(fist);
+let sniperRifle;
 
 scene.add(camera);
 
@@ -85,6 +84,7 @@ const enemies = [];
 // Physics settings
 const gravity = 9.8;
 let prevTime = performance.now();
+let lastShootTime = 0; // Track when the last shot was fired
 
 // Lighting - IMPORTANT for visibility
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.8); // Increased intensity
@@ -108,6 +108,12 @@ const machineGunPickups = [];
 // Add pistol pickups
 const pistolPickups = [];
 
+// Add sniper rifle pickups
+const sniperRiflePickups = [];
+
+// Add health pickups
+const healthPickups = [];
+
 // Audio setup
 const audioListener = new THREE.AudioListener();
 camera.add(audioListener);
@@ -116,11 +122,11 @@ camera.add(audioListener);
 const soundEffects = {
     shoot: new THREE.Audio(audioListener),
     reload: new THREE.Audio(audioListener),
-    melee: new THREE.Audio(audioListener),
     enemyHit: new THREE.Audio(audioListener),
     enemyDeath: new THREE.Audio(audioListener),
-    pickupBullets: new THREE.Audio(audioListener),
-    playerHurt: new THREE.Audio(audioListener) // New sound for player getting hit
+    puckupHealth: new THREE.Audio(audioListener),
+    playerHurt: new THREE.Audio(audioListener), // New sound for player getting hit
+    sniperShoot: new THREE.Audio(audioListener) // New sound for sniper rifle
 };
 
 // Audio loader
@@ -139,11 +145,6 @@ function loadSoundEffects() {
         soundEffects.reload.setVolume(0.5);
     });
     
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/931/931-preview.mp3', function(buffer) {
-        soundEffects.melee.setBuffer(buffer);
-        soundEffects.melee.setVolume(0.5);
-    });
-    
     audioLoader.load('https://assets.mixkit.co/active_storage/sfx/209/209-preview.mp3', function(buffer) {
         soundEffects.enemyHit.setBuffer(buffer);
         soundEffects.enemyHit.setVolume(0.5);
@@ -155,14 +156,20 @@ function loadSoundEffects() {
     });
     
     audioLoader.load('https://assets.mixkit.co/active_storage/sfx/270/270-preview.mp3', function(buffer) {
-        soundEffects.pickupBullets.setBuffer(buffer);
-        soundEffects.pickupBullets.setVolume(0.5);
+        soundEffects.puckupHealth.setBuffer(buffer);
+        soundEffects.puckupHealth.setVolume(0.5);
     });
     
     // Player hurt sound - cartoon grunt/yelp
     audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1143/1143-preview.mp3', function(buffer) {
         soundEffects.playerHurt.setBuffer(buffer);
         soundEffects.playerHurt.setVolume(0.7);
+    });
+    
+    // Sniper rifle sound effect
+    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1144/1144-preview.mp3', function(buffer) {
+        soundEffects.sniperShoot.setBuffer(buffer);
+        soundEffects.sniperShoot.setVolume(0.5);
     });
 }
 
@@ -235,7 +242,7 @@ document.addEventListener('keydown', (event) => {
             break;
         case 'Space':
             if (canJump) {
-                velocity.y += 10;
+                velocity.y += 5;
                 canJump = false;
             }
             break;
@@ -247,12 +254,6 @@ document.addEventListener('keydown', (event) => {
             break;
         case 'KeyE':
             interactWithPickups();
-            break;
-        case 'Digit1':
-            switchWeapon(1);
-            break;
-        case 'Digit2':
-            switchWeapon(2);
             break;
     }
 });
@@ -289,14 +290,6 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// Add right-click event for melee attack
-document.addEventListener('contextmenu', (event) => {
-    event.preventDefault(); // Prevent context menu from appearing
-    if (controls.isLocked && !gameState.gameOver) {
-        meleeAttack();
-    }
-});
-
 // Also add mousedown event for right-click to ensure it works across all browsers
 document.addEventListener('mousedown', (event) => {
     // Check for right mouse button (button 2 in most browsers, sometimes button 1)
@@ -304,8 +297,11 @@ document.addEventListener('mousedown', (event) => {
         debugLog(`Right mouse button clicked (button: ${event.button})`);
         event.preventDefault();
         if (controls.isLocked && !gameState.gameOver) {
-            debugLog('Controls locked, triggering melee attack');
-            meleeAttack();
+            debugLog('Controls locked');
+            // Toggle zoom if using sniper rifle
+            if (gameState.currentGunType === 'sniperRifle') {
+                toggleZoom();
+            }
         } else {
             debugLog(`Controls locked: ${controls.isLocked}, Game over: ${gameState.gameOver}`);
         }
@@ -385,6 +381,65 @@ function createMachineGun() {
     weaponGroup.add(barrel);
     weaponGroup.add(magazine);
     weaponGroup.add(handle);
+    
+    // Position the weapon
+    weaponGroup.position.set(0.3, -0.3, -0.5);
+    weaponGroup.visible = false; // Hide initially
+    
+    return weaponGroup;
+}
+
+// Create a sniper rifle weapon
+function createSniperRifle() {
+    debugLog('Creating sniper rifle');
+    // Create a cartoon-style sniper rifle
+    const weaponGroup = new THREE.Group();
+    
+    // Gun body (longer than machine gun)
+    const gunGeometry = new THREE.BoxGeometry(0.08, 0.12, 0.7);
+    const gunMaterial = new THREE.MeshBasicMaterial({ color: 0x444444 }); // Dark gray color
+    const gun = new THREE.Mesh(gunGeometry, gunMaterial);
+    
+    // Barrel (longer than machine gun)
+    const barrelGeometry = new THREE.CylinderGeometry(0.02, 0.02, 0.9, 8);
+    const barrel = new THREE.Mesh(barrelGeometry, gunMaterial);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.z = -0.4;
+    
+    // Add scope
+    const scopeGeometry = new THREE.CylinderGeometry(0.04, 0.04, 0.2, 8);
+    const scopeMaterial = new THREE.MeshBasicMaterial({ color: 0x111111 });
+    const scope = new THREE.Mesh(scopeGeometry, scopeMaterial);
+    scope.rotation.x = Math.PI / 2;
+    scope.position.y = 0.1;
+    scope.position.z = -0.1;
+    
+    // Add scope lens
+    const lensGeometry = new THREE.CircleGeometry(0.03, 16);
+    const lensMaterial = new THREE.MeshBasicMaterial({ color: 0x88ccff });
+    const lens = new THREE.Mesh(lensGeometry, lensMaterial);
+    lens.position.z = 0.1;
+    lens.rotation.y = Math.PI;
+    scope.add(lens);
+    
+    // Add handle
+    const handleGeometry = new THREE.BoxGeometry(0.08, 0.15, 0.1);
+    const handleMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
+    const handle = new THREE.Mesh(handleGeometry, handleMaterial);
+    handle.position.y = -0.1;
+    handle.position.z = 0.1;
+    handle.rotation.x = 0.3;
+    
+    // Add stock
+    const stockGeometry = new THREE.BoxGeometry(0.06, 0.1, 0.3);
+    const stock = new THREE.Mesh(stockGeometry, handleMaterial);
+    stock.position.z = 0.3;
+    
+    weaponGroup.add(gun);
+    weaponGroup.add(barrel);
+    weaponGroup.add(scope);
+    weaponGroup.add(handle);
+    weaponGroup.add(stock);
     
     // Position the weapon
     weaponGroup.position.set(0.3, -0.3, -0.5);
@@ -638,8 +693,20 @@ function createEnemy() {
 
 // Function to shoot
 function shoot() {
+    // Check if we're reloading
+    if (gameState.isReloading) return;
+    
     // Check if we have ammo for the current weapon
-    if (gameState.ammo <= 0 || gameState.isReloading) return;
+    if (gameState.ammo <= 0) {
+        // Auto reload if out of ammo and player is still trying to shoot
+        if (gameState.isMouseDown) {
+            reload();
+        }
+        return;
+    }
+    
+    // Update last shoot time
+    lastShootTime = performance.now();
     
     // Decrease ammo
     gameState.ammo--;
@@ -647,17 +714,39 @@ function shoot() {
     updateUI();
     
     // Play shoot sound
-    playSound('shoot');
+    if (gameState.currentGunType === 'sniperRifle') {
+        playSound('sniperShoot');
+    } else {
+        playSound('shoot');
+    }
     
     // Apply recoil effect
     applyRecoil();
     
-    // Get bullet starting position (gun barrel)
-    const bulletStartPosition = new THREE.Vector3(0, 0, -0.5);
-    if (gameState.currentGunType === 'pistol') {
-        weapon.localToWorld(bulletStartPosition);
+    // Get bullet starting position
+    let bulletStartPosition;
+    
+    // When zoomed in with sniper rifle, bullet comes from center of screen
+    if (gameState.currentGunType === 'sniperRifle' && gameState.isZoomed) {
+        // Get camera position and direction
+        bulletStartPosition = new THREE.Vector3();
+        camera.getWorldPosition(bulletStartPosition);
+        
+        // Move bullet starting position slightly forward from camera
+        const forward = new THREE.Vector3(0, 0, -1);
+        forward.applyQuaternion(camera.quaternion);
+        forward.multiplyScalar(0.5); // Move 0.5 units forward
+        bulletStartPosition.add(forward);
     } else {
-        machineGun.localToWorld(bulletStartPosition);
+        // Normal gun barrel position for non-zoomed weapons
+        bulletStartPosition = new THREE.Vector3(0, 0, -0.5);
+        if (gameState.currentGunType === 'pistol') {
+            weapon.localToWorld(bulletStartPosition);
+        } else if (gameState.currentGunType === 'machineGun') {
+            machineGun.localToWorld(bulletStartPosition);
+        } else if (gameState.currentGunType === 'sniperRifle') {
+            sniperRifle.localToWorld(bulletStartPosition);
+        }
     }
     
     // Get shooting direction from camera
@@ -667,8 +756,10 @@ function shoot() {
     // Apply recoil effect to bullet trajectory
     if (gameState.currentRecoil) {
         // Add recoil-based spread to the bullet direction
-        shootDirection.x += gameState.currentRecoil.x;
-        shootDirection.y += gameState.currentRecoil.y;
+        // Sniper rifle has much less spread when zoomed in
+        const spreadFactor = (gameState.currentGunType === 'sniperRifle' && gameState.isZoomed) ? 0.1 : 1.0;
+        shootDirection.x += gameState.currentRecoil.x * spreadFactor;
+        shootDirection.y += gameState.currentRecoil.y * spreadFactor;
         
         // Normalize to maintain consistent bullet speed
         shootDirection.normalize();
@@ -680,19 +771,73 @@ function shoot() {
     // Set bullet damage based on weapon type
     if (gameState.currentGunType === 'machineGun') {
         bullet.damage = 30; // Machine gun does less damage per bullet
+    } else if (gameState.currentGunType === 'sniperRifle') {
+        bullet.damage = 200; // Sniper rifle does massive damage
+        bullet.speed = 30; // Faster bullet
+        
+        // Create a tracer effect for sniper rifle
+        const tracerGeometry = new THREE.CylinderGeometry(0.01, 0.01, 100, 8);
+        const tracerMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0xff0000,
+            transparent: true,
+            opacity: 0.3
+        });
+        const tracer = new THREE.Mesh(tracerGeometry, tracerMaterial);
+        tracer.rotation.x = Math.PI / 2;
+        tracer.position.z = -50; // Position behind the bullet
+        bullet.mesh.add(tracer);
+        
+        // Flash effect
+        createMuzzleFlash(bulletStartPosition);
     }
     
     bulletProjectiles.push(bullet);
     
-    // If using machine gun, automatically shoot again after a short delay
-    // but only if the mouse button is still being held down
-    if (gameState.currentGunType === 'machineGun' && gameState.ammo > 0 && gameState.isMouseDown && !gameState.isReloading) {
-        setTimeout(() => {
-            if (gameState.currentGunType === 'machineGun' && !gameState.gameOver && gameState.isMouseDown && !gameState.isReloading) {
-                shoot();
-            }
-        }, 100); // 100ms delay between shots for machine gun
+    // Machine gun auto-fire is now handled in the animate function
+}
+
+// Create muzzle flash effect
+function createMuzzleFlash(position) {
+    const flashGeometry = new THREE.SphereGeometry(0.2, 16, 16);
+    const flashMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xffff00,
+        transparent: true,
+        opacity: 0.8
+    });
+    const flash = new THREE.Mesh(flashGeometry, flashMaterial);
+    
+    // If zoomed with sniper, make flash smaller and more transparent
+    if (gameState.currentGunType === 'sniperRifle' && gameState.isZoomed) {
+        flash.scale.set(0.5, 0.5, 0.5);
+        flashMaterial.opacity = 0.4;
     }
+    
+    flash.position.copy(position);
+    scene.add(flash);
+    
+    // Animate the flash
+    let scale = 1.0;
+    const animateFlash = () => {
+        scale -= 0.1;
+        if (scale <= 0) {
+            scene.remove(flash);
+            return;
+        }
+        
+        // If not zoomed, normal animation
+        if (!(gameState.currentGunType === 'sniperRifle' && gameState.isZoomed)) {
+            flash.scale.set(scale, scale, scale);
+            flash.material.opacity = scale * 0.8;
+        } else {
+            // If zoomed, smaller and more subtle animation
+            flash.scale.set(scale * 0.5, scale * 0.5, scale * 0.5);
+            flash.material.opacity = scale * 0.4;
+        }
+        
+        requestAnimationFrame(animateFlash);
+    };
+    
+    animateFlash();
 }
 
 // Apply recoil effect to the weapon and camera
@@ -701,17 +846,20 @@ function applyRecoil() {
     gameState.recoilActive = true;
     gameState.recoilRecovery = 0;
     
-    // Visual recoil on the weapon
-    // Move the weapon back and up
-    weapon.position.z += 0.15;
-    weapon.position.y += 0.05;
-    weapon.rotation.x -= 0.2; // Rotate up
-    
-    // Apply same recoil to machine gun if it's active
-    if (gameState.currentGunType === 'machineGun') {
+    // Visual recoil on the weapon - different for each weapon type
+    if (gameState.currentGunType === 'pistol') {
+        weapon.position.z += 0.15;
+        weapon.position.y += 0.05;
+        weapon.rotation.x -= 0.2; // Rotate up
+    } else if (gameState.currentGunType === 'machineGun') {
         machineGun.position.z += 0.15;
         machineGun.position.y += 0.05;
         machineGun.rotation.x -= 0.2;
+    } else if (gameState.currentGunType === 'sniperRifle') {
+        // Sniper rifle has more recoil
+        sniperRifle.position.z += 0.3;
+        sniperRifle.position.y += 0.1;
+        sniperRifle.rotation.x -= 0.4;
     }
     
     // Add vertical camera movement for effect (without rotation)
@@ -720,13 +868,17 @@ function applyRecoil() {
         gameState.cameraOriginalY = camera.position.y;
     }
     
-    // Move camera up slightly
-    camera.position.y += 0.05;
+    // Move camera up slightly - more for sniper rifle
+    const cameraRecoil = gameState.currentGunType === 'sniperRifle' ? 0.1 : 0.05;
+    camera.position.y += cameraRecoil;
     
     // Store recoil amount for bullet trajectory
+    const recoilX = (Math.random() - 0.5) * (gameState.currentGunType === 'sniperRifle' ? 0.08 : 0.05);
+    const recoilY = gameState.currentGunType === 'sniperRifle' ? 0.08 : 0.05;
+    
     gameState.currentRecoil = {
-        x: (Math.random() - 0.5) * 0.05, // Random horizontal spread
-        y: 0.05 // Upward spread
+        x: recoilX, // Random horizontal spread
+        y: recoilY // Upward spread
     };
 }
 
@@ -741,20 +893,19 @@ function processRecoilRecovery(delta) {
     const recovery = Math.min(gameState.recoilRecovery, 1);
     
     // Smoothly interpolate weapon back to original position
-    if (weapon.position.z > 0.3) {
-        weapon.position.z = 0.3 + (0.15 * (1 - recovery));
-    }
-    
-    if (weapon.position.y > -0.3) {
-        weapon.position.y = -0.3 + (0.05 * (1 - recovery));
-    }
-    
-    if (weapon.rotation.x < 0) {
-        weapon.rotation.x = -0.2 * (1 - recovery);
-    }
-    
-    // Also recover machine gun if it's the active weapon
-    if (gameState.currentGunType === 'machineGun') {
+    if (gameState.currentGunType === 'pistol') {
+        if (weapon.position.z > 0.3) {
+            weapon.position.z = 0.3 + (0.15 * (1 - recovery));
+        }
+        
+        if (weapon.position.y > -0.3) {
+            weapon.position.y = -0.3 + (0.05 * (1 - recovery));
+        }
+        
+        if (weapon.rotation.x < 0) {
+            weapon.rotation.x = -0.2 * (1 - recovery);
+        }
+    } else if (gameState.currentGunType === 'machineGun') {
         if (machineGun.position.z > 0.3) {
             machineGun.position.z = 0.3 + (0.15 * (1 - recovery));
         }
@@ -766,11 +917,24 @@ function processRecoilRecovery(delta) {
         if (machineGun.rotation.x < 0) {
             machineGun.rotation.x = -0.2 * (1 - recovery);
         }
+    } else if (gameState.currentGunType === 'sniperRifle') {
+        if (sniperRifle.position.z > 0.3) {
+            sniperRifle.position.z = 0.3 + (0.3 * (1 - recovery));
+        }
+        
+        if (sniperRifle.position.y > -0.3) {
+            sniperRifle.position.y = -0.3 + (0.1 * (1 - recovery));
+        }
+        
+        if (sniperRifle.rotation.x < 0) {
+            sniperRifle.rotation.x = -0.4 * (1 - recovery);
+        }
     }
     
     // Recover camera position
     if (gameState.cameraOriginalY && camera.position.y > gameState.cameraOriginalY) {
-        camera.position.y = gameState.cameraOriginalY + (0.05 * (1 - recovery));
+        const cameraRecoil = gameState.currentGunType === 'sniperRifle' ? 0.1 : 0.05;
+        camera.position.y = gameState.cameraOriginalY + (cameraRecoil * (1 - recovery));
     }
     
     // Gradually reduce recoil effect on bullets
@@ -790,6 +954,10 @@ function processRecoilRecovery(delta) {
         // Reset machine gun position too
         machineGun.position.set(0.3, -0.3, -0.5);
         machineGun.rotation.set(0, 0, 0);
+        
+        // Reset sniper rifle position
+        sniperRifle.position.set(0.3, -0.3, -0.5);
+        sniperRifle.rotation.set(0, 0, 0);
         
         // Reset camera position
         if (gameState.cameraOriginalY) {
@@ -828,7 +996,7 @@ function updateUI() {
     // Update weapon info in inventory
     const weaponNameEl = document.querySelector('.inventory-item:nth-child(1)');
     if (weaponNameEl) {
-        const gunName = gameState.currentGunType === 'pistol' ? "Cartoon Blaster" : "Machine Gun";
+        const gunName = gameState.currentGunType === 'pistol' ? "Cartoon Blaster" : gameState.currentGunType === 'machineGun' ? "Machine Gun" : "Sniper Rifle";
         weaponNameEl.textContent = `🔫 Weapon: ${gunName}`;
     }
     
@@ -846,17 +1014,24 @@ function interactWithPickups() {
     const playerPosition = new THREE.Vector3();
     camera.getWorldPosition(playerPosition);
     
+    // Health pickups are now automatically picked up when touched
+    // No need to check for them here
+    
     // Check for machine gun pickups
     for (let i = machineGunPickups.length - 1; i >= 0; i--) {
         const pickup = machineGunPickups[i];
         const distance = playerPosition.distanceTo(pickup.mesh.position);
         
         if (distance < 2) { // Interaction range
-            // Drop current gun (pistol) and create a pickup for it
+            // Drop current gun and create a pickup for it
             const dropPosition = playerPosition.clone();
             dropPosition.y = 0.5; // Slightly above ground
-            const pistolPickup = createPistolPickup(dropPosition);
-            pistolPickups.push(pistolPickup);
+            
+            if (gameState.currentGunType === 'pistol') {
+                pistolPickups.push(createPistolPickup(dropPosition));
+            } else if (gameState.currentGunType === 'sniperRifle') {
+                sniperRiflePickups.push(createSniperRiflePickup(dropPosition));
+            }
             
             // Pick up machine gun
             gameState.currentGunType = 'machineGun';
@@ -865,6 +1040,12 @@ function interactWithPickups() {
             // Update weapon visibility
             weapon.visible = false;
             machineGun.visible = true;
+            sniperRifle.visible = false;
+            
+            // Reset zoom if coming from sniper rifle
+            if (gameState.isZoomed) {
+                toggleZoom();
+            }
             
             // Mark pickup as inactive before removing it
             pickup.isActive = false;
@@ -874,7 +1055,7 @@ function interactWithPickups() {
             machineGunPickups.splice(i, 1);
             
             // Play pickup sound
-            playSound('pickupBullets');
+            playSound('puckupHealth');
             
             // Show notification
             showNotification("Machine Gun acquired!");
@@ -890,11 +1071,15 @@ function interactWithPickups() {
         const distance = playerPosition.distanceTo(pickup.mesh.position);
         
         if (distance < 2) { // Interaction range
-            // Drop current gun (machine gun) and create a pickup for it
+            // Drop current gun and create a pickup for it
             const dropPosition = playerPosition.clone();
             dropPosition.y = 0.5; // Slightly above ground
-            const machineGunPickup = createMachineGunPickup(dropPosition);
-            machineGunPickups.push(machineGunPickup);
+            
+            if (gameState.currentGunType === 'machineGun') {
+                machineGunPickups.push(createMachineGunPickup(dropPosition));
+            } else if (gameState.currentGunType === 'sniperRifle') {
+                sniperRiflePickups.push(createSniperRiflePickup(dropPosition));
+            }
             
             // Pick up pistol
             gameState.currentGunType = 'pistol';
@@ -903,6 +1088,12 @@ function interactWithPickups() {
             // Update weapon visibility
             weapon.visible = true;
             machineGun.visible = false;
+            sniperRifle.visible = false;
+            
+            // Reset zoom if coming from sniper rifle
+            if (gameState.isZoomed) {
+                toggleZoom();
+            }
             
             // Mark pickup as inactive before removing it
             pickup.isActive = false;
@@ -912,10 +1103,53 @@ function interactWithPickups() {
             pistolPickups.splice(i, 1);
             
             // Play pickup sound
-            playSound('pickupBullets');
+            playSound('puckupHealth');
             
             // Show notification
             showNotification("Pistol acquired!");
+            
+            updateUI();
+            return; // Exit after picking up
+        }
+    }
+    
+    // Check for sniper rifle pickups
+    for (let i = sniperRiflePickups.length - 1; i >= 0; i--) {
+        const pickup = sniperRiflePickups[i];
+        const distance = playerPosition.distanceTo(pickup.mesh.position);
+        
+        if (distance < 2) { // Interaction range
+            // Drop current gun and create a pickup for it
+            const dropPosition = playerPosition.clone();
+            dropPosition.y = 0.5; // Slightly above ground
+            
+            if (gameState.currentGunType === 'pistol') {
+                pistolPickups.push(createPistolPickup(dropPosition));
+            } else if (gameState.currentGunType === 'machineGun') {
+                machineGunPickups.push(createMachineGunPickup(dropPosition));
+            }
+            
+            // Pick up sniper rifle
+            gameState.currentGunType = 'sniperRifle';
+            gameState.ammo = gameState.maxAmmo = 5; // Sniper rifle has 5 rounds
+            
+            // Update weapon visibility
+            weapon.visible = false;
+            machineGun.visible = false;
+            sniperRifle.visible = true;
+            
+            // Mark pickup as inactive before removing it
+            pickup.isActive = false;
+            
+            // Remove pickup
+            scene.remove(pickup.mesh);
+            sniperRiflePickups.splice(i, 1);
+            
+            // Play pickup sound
+            playSound('puckupHealth');
+            
+            // Show notification
+            showNotification("Sniper Rifle acquired!");
             
             updateUI();
             return; // Exit after picking up
@@ -938,7 +1172,11 @@ function restartGame() {
         isReloading: false, // Reset reloading state
         isMouseDown: false, // Reset mouse button state
         cameraOriginalY: null, // Reset camera original position
-        currentRecoil: { x: 0, y: 0 } // Reset recoil effect on bullets
+        currentRecoil: { x: 0, y: 0 }, // Reset recoil effect on bullets
+        isZoomed: false, // Reset sniper scope state
+        originalFOV: 75, // Reset original FOV
+        lastPickupHintTime: 0, // Reset when the last pickup hint was shown
+        nearbyPickup: null // Reset the type of nearby pickup
     };
     
     // Reset enemy arrays
@@ -981,6 +1219,13 @@ function restartGame() {
     }
     pistolPickups.length = 0;
     
+    // Remove all sniper rifle pickups
+    for (const pickup of sniperRiflePickups) {
+        pickup.isActive = false; // Mark as inactive to stop animations
+        scene.remove(pickup.mesh);
+    }
+    sniperRiflePickups.length = 0;
+    
     // Reset player position
     camera.position.set(0, 1.6, 0);
     velocity.set(0, 0, 0);
@@ -988,6 +1233,15 @@ function restartGame() {
     // Reset weapon visibility
     weapon.visible = true;
     machineGun.visible = false;
+    sniperRifle.visible = false;
+    
+    // Remove scope overlay if active
+    if (gameState.isZoomed) {
+        removeScopeOverlay();
+    }
+    
+    // Hide pickup hint
+    hidePickupHint();
     
     // Spawn new enemies and pickups
     spawnEnemies();
@@ -1090,13 +1344,6 @@ function createBulletPickup() {
     };
 }
 
-// Spawn bullet pickups
-function spawnBulletPickups(count = 5) {
-    for (let i = 0; i < count; i++) {
-        bulletPickups.push(createBulletPickup());
-    }
-}
-
 // Reload function
 function reload() {
     if (gameState.ammo === gameState.maxAmmo || gameState.isReloading) return;
@@ -1133,224 +1380,6 @@ function reload() {
     updateUI();
 }
 
-// Create fist for melee attack
-function createFist() {
-    debugLog('Creating fist for melee attack');
-    
-    // Create a cartoon-style fist
-    const fistGroup = new THREE.Group();
-    
-    // Main fist - white glove like in classic cartoons
-    const fistGeometry = new THREE.SphereGeometry(0.2, 16, 16);
-    const fistMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const fistMesh = new THREE.Mesh(fistGeometry, fistMaterial);
-    
-    // Black outline for cartoon effect
-    const outlineGeometry = new THREE.SphereGeometry(0.21, 16, 16);
-    const outlineMaterial = new THREE.MeshBasicMaterial({ 
-        color: 0x000000, 
-        side: THREE.BackSide 
-    });
-    const outline = new THREE.Mesh(outlineGeometry, outlineMaterial);
-    fistMesh.add(outline);
-    
-    // Add details to make it look like a cartoon glove
-    const knuckleGeometry = new THREE.SphereGeometry(0.05, 8, 8);
-    const knuckleMaterial = new THREE.MeshBasicMaterial({ color: 0xdddddd });
-    
-    // Add knuckles
-    for (let i = 0; i < 3; i++) {
-        const knuckle = new THREE.Mesh(knuckleGeometry, knuckleMaterial);
-        knuckle.position.set(0.1, 0.1 - (i * 0.1), 0.15);
-        fistGroup.add(knuckle);
-    }
-    
-    // Add wrist/cuff
-    const cuffGeometry = new THREE.CylinderGeometry(0.15, 0.2, 0.1, 16);
-    const cuffMaterial = new THREE.MeshBasicMaterial({ color: 0xdddddd });
-    const cuff = new THREE.Mesh(cuffGeometry, cuffMaterial);
-    cuff.rotation.x = Math.PI / 2;
-    cuff.position.set(0, 0, -0.2);
-    
-    // Black outline for cuff
-    const cuffOutlineGeometry = new THREE.CylinderGeometry(0.16, 0.21, 0.11, 16);
-    const cuffOutlineMaterial = new THREE.MeshBasicMaterial({ 
-        color: 0x000000, 
-        side: THREE.BackSide 
-    });
-    const cuffOutline = new THREE.Mesh(cuffOutlineGeometry, cuffOutlineMaterial);
-    cuffOutline.rotation.x = Math.PI / 2;
-    cuffOutline.position.copy(cuff.position);
-    
-    // Add all parts to the group
-    fistGroup.add(fistMesh);
-    fistGroup.add(cuff);
-    fistGroup.add(cuffOutline);
-    
-    // Add classic cartoon lines on the glove
-    const lineGeometry = new THREE.BoxGeometry(0.01, 0.15, 0.01);
-    const lineMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
-    
-    // Horizontal lines on the back of the glove
-    for (let i = 0; i < 2; i++) {
-        const line = new THREE.Mesh(lineGeometry, lineMaterial);
-        line.rotation.z = Math.PI / 2;
-        line.position.set(0, 0.05 - (i * 0.1), 0.18);
-        fistGroup.add(line);
-    }
-    
-    // Position the fist off-screen to the left
-    fistGroup.position.set(-0.8, -0.3, -0.5);
-    
-    return fistGroup;
-}
-
-// Melee attack function
-function meleeAttack() {
-    debugLog('Melee attack triggered');
-    
-    // Don't allow melee attack if already in progress
-    if (fist.visible) {
-        debugLog('Melee attack already in progress, ignoring');
-        return;
-    }
-    
-    debugLog('Executing melee attack');
-    
-    // Play melee sound
-    playSound('melee');
-    
-    // Show the fist
-    fist.visible = true;
-    
-    // Animate the fist punching forward
-    const startPosition = new THREE.Vector3(-0.8, -0.3, -0.5);
-    const punchPosition = new THREE.Vector3(0, -0.3, -1.2);
-    
-    // Starting rotation and scale
-    const startRotation = new THREE.Euler(0, 0, 0);
-    const punchRotation = new THREE.Euler(0, 0, -Math.PI * 0.25); // Rotate for impact
-    const startScale = new THREE.Vector3(1, 1, 1);
-    const impactScale = new THREE.Vector3(1.2, 1.2, 0.8); // Squash on impact
-    
-    // Reset fist to starting position
-    fist.position.copy(startPosition);
-    fist.rotation.set(startRotation.x, startRotation.y, startRotation.z);
-    fist.scale.copy(startScale);
-    
-    // Punch animation
-    const punchDuration = 300; // milliseconds
-    const startTime = performance.now();
-    
-    function animatePunch() {
-        const now = performance.now();
-        const elapsed = now - startTime;
-        const progress = Math.min(elapsed / punchDuration, 1);
-        
-        if (progress < 0.4) {
-            // Wind up - move slightly back and rotate
-            const t = progress / 0.4; // 0 to 1 during wind up
-            const windupPosition = new THREE.Vector3(-1.0, -0.3, -0.5); // Further left
-            fist.position.lerpVectors(startPosition, windupPosition, t);
-            fist.rotation.z = -Math.PI * 0.1 * t; // Slight rotation back
-        } else if (progress < 0.7) {
-            // Punch forward
-            const t = (progress - 0.4) / 0.3; // 0 to 1 during punch
-            const windupPosition = new THREE.Vector3(-1.0, -0.3, -0.5);
-            fist.position.lerpVectors(windupPosition, punchPosition, t);
-            
-            // Rotate during punch
-            fist.rotation.z = -Math.PI * 0.1 * (1 - t) - Math.PI * 0.25 * t;
-            
-            // Scale for impact at the end of the punch
-            if (t > 0.8) {
-                const scaleT = (t - 0.8) / 0.2;
-                fist.scale.lerpVectors(startScale, impactScale, scaleT);
-            }
-        } else {
-            // Retract
-            const t = (progress - 0.7) / 0.3; // 0 to 1 during retraction
-            fist.position.lerpVectors(punchPosition, startPosition, t);
-            
-            // Rotate back to normal
-            fist.rotation.z = -Math.PI * 0.25 * (1 - t);
-            
-            // Scale back to normal
-            fist.scale.lerpVectors(impactScale, startScale, t);
-        }
-        
-        if (progress < 1) {
-            requestAnimationFrame(animatePunch);
-        } else {
-            // Animation complete, hide the fist
-            fist.visible = false;
-            fist.position.copy(startPosition);
-            fist.rotation.set(0, 0, 0);
-            fist.scale.set(1, 1, 1);
-        }
-    }
-    
-    // Start the animation
-    animatePunch();
-    
-    // Ray casting for melee attack
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(new THREE.Vector2(), camera);
-    
-    // Check for enemy hits - shorter range than shooting
-    const enemyMeshes = enemies.map(e => e.mesh);
-    const intersects = raycaster.intersectObjects(enemyMeshes, true);
-    
-    if (intersects.length > 0 && intersects[0].distance < 3) { // Melee range is 3 units
-        const hitObject = intersects[0].object;
-        // Find which enemy was hit
-        for (let i = 0; i < enemies.length; i++) {
-            if (enemies[i].mesh.children.includes(hitObject) || enemies[i].mesh === hitObject) {
-                enemies[i].health -= 25; // Melee does less damage than shooting
-                
-                // Play enemy hit sound
-                playSound('enemyHit');
-                
-                // Visual feedback for hit - more dramatic for melee
-                hitObject.material.color.set(0xff0000);
-                
-                // Add impact effect - make the enemy move back slightly
-                const playerPosition = new THREE.Vector3();
-                camera.getWorldPosition(playerPosition);
-                const direction = new THREE.Vector3();
-                direction.subVectors(enemies[i].mesh.position, playerPosition).normalize();
-                
-                // Push enemy back
-                enemies[i].mesh.position.add(direction.multiplyScalar(0.5));
-                
-                setTimeout(() => {
-                    if (hitObject.material) {
-                        hitObject.material.color.set(0x000000);
-                    }
-                }, 100);
-                
-                // Check if enemy is defeated
-                if (enemies[i].health <= 0) {
-                    // Play enemy death sound
-                    playSound('enemyDeath');
-                    
-                    scene.remove(enemies[i].mesh);
-                    enemies.splice(i, 1);
-                    gameState.score += 100;
-                    
-                    // Check if all enemies are defeated
-                    if (enemies.length === 0) {
-                        gameState.level++;
-                        spawnEnemies();
-                        spawnBulletPickups(3); // Spawn some bullet pickups for the next level
-                    }
-                }
-                break;
-            }
-        }
-    }
-}
-
 // Toggle inventory display
 function toggleInventory() {
     gameState.showInventory = !gameState.showInventory;
@@ -1363,14 +1392,6 @@ function toggleInventory() {
         controls.lock();
     }
 }
-
-// Initialize bullet pickups
-spawnBulletPickups();
-
-// Add a general mousedown debug logger
-document.addEventListener('mousedown', (event) => {
-    debugLog(`Mouse button pressed: ${event.button}`);
-}, true); // Use capture phase to ensure this runs first
 
 // Create a red halo effect for player damage
 function createDamageOverlay() {
@@ -1511,8 +1532,10 @@ function init() {
     // Create weapons
     weapon = createWeapon();
     machineGun = createMachineGun();
+    sniperRifle = createSniperRifle();
     camera.add(weapon);
     camera.add(machineGun);
+    camera.add(sniperRifle);
     
     // Update UI after elements are initialized
     updateUI();
@@ -1542,33 +1565,29 @@ function createHealthPickup(position) {
     // Add to scene
     scene.add(health);
     
-    return {
+    // Create pickup object
+    const pickup = {
         mesh: health,
         type: 'health',
         health: 25, // Each pickup gives 25 health
-        timeCreated: performance.now()
+        timeCreated: performance.now(),
+        isActive: true // Flag to track if pickup is still active
     };
-}
-
-// Create a bullet pickup from enemy drop
-function createBulletDropPickup(position) {
-    const bulletGeometry = new THREE.BoxGeometry(0.2, 0.2, 0.5);
-    const bulletMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-    const bullet = new THREE.Mesh(bulletGeometry, bulletMaterial);
     
-    // Position at the enemy's location
-    bullet.position.copy(position);
-    bullet.position.y = 0.5; // Slightly above ground
-    
-    // Add to scene
-    scene.add(bullet);
-    
-    return {
-        mesh: bullet,
-        type: 'bullets',
-        bullets: 5, // Each enemy drop gives 5 bullets
-        timeCreated: performance.now()
+    // Add floating animation
+    const floatAnimation = () => {
+        if (!pickup.isActive) return; // Stop animation if pickup is no longer active
+        
+        health.position.y = 0.5 + Math.sin(performance.now() * 0.002) * 0.1;
+        health.rotation.y += 0.01;
+        
+        requestAnimationFrame(floatAnimation);
     };
+    
+    // Start the animation
+    floatAnimation();
+    
+    return pickup;
 }
 
 // Create a bullet projectile
@@ -1672,18 +1691,18 @@ function updateBulletProjectiles(delta) {
                     const dropRoll = Math.random();
                     if (dropRoll < 0.2) {
                         // 20% chance to drop health
-                        bulletPickups.push(createHealthPickup(enemyPosition));
+                        healthPickups.push(createHealthPickup(enemyPosition));
                         debugLog('Enemy dropped health');
-                    } else if (dropRoll < 0.4) {
-                        // 20% chance to drop bullets
-                        bulletPickups.push(createBulletDropPickup(enemyPosition));
-                        debugLog('Enemy dropped bullets');
-                    } else if (dropRoll < 0.55 && !gameState.hasMachineGun) {
-                        // 15% chance to drop machine gun (only if player doesn't have one)
+                    } else if (dropRoll < 0.3) {
+                        // 10% chance to drop machine gun
                         machineGunPickups.push(createMachineGunPickup(enemyPosition));
                         debugLog('Enemy dropped machine gun');
+                    } else if (dropRoll < 0.35) {
+                        // 5% chance to drop sniper rifle (rare)
+                        sniperRiflePickups.push(createSniperRiflePickup(enemyPosition));
+                        debugLog('Enemy dropped sniper rifle');
                     } else {
-                        // 45-65% chance to drop nothing
+                        // 65% chance to drop nothing
                         debugLog('Enemy dropped nothing');
                     }
                     
@@ -2076,34 +2095,6 @@ function createMachineGunPickup(position) {
     return pickup;
 }
 
-// Function to switch weapons
-function switchWeapon(weaponNumber) {
-    // Convert weaponNumber to gun type
-    const gunType = weaponNumber === 1 ? 'pistol' : 'machineGun';
-    
-    // Don't switch if we're trying to switch to a gun we don't have
-    if (gunType !== gameState.currentGunType) {
-        // Can't switch to machine gun if we don't have it
-        if (gunType === 'machineGun' && gameState.currentGunType !== 'machineGun') {
-            showNotification("You don't have a Machine Gun!");
-            return;
-        }
-    }
-    
-    gameState.currentGunType = gunType;
-    
-    // Update weapon visibility
-    if (gunType === 'pistol') {
-        weapon.visible = true;
-        machineGun.visible = false;
-    } else {
-        weapon.visible = false;
-        machineGun.visible = true;
-    }
-    
-    updateUI();
-}
-
 // Show notification function
 function showNotification(message) {
     // Create notification element if it doesn't exist
@@ -2185,13 +2176,12 @@ function createPistolPickup(position) {
     return pickup;
 }
 
-// Function to check if game is over
+// Check if game is over
 function checkGameOver() {
     if (gameState.health <= 0 && !gameState.gameOver) {
         gameState.gameOver = true;
         
-        // Update game over screen with score and level
-        const gameOverEl = document.getElementById('gameOver');
+        // Show game over screen
         const scoreEl = document.getElementById('finalScore');
         const levelEl = document.getElementById('finalLevel');
         
@@ -2200,6 +2190,9 @@ function checkGameOver() {
         
         gameOverEl.style.display = 'block';
         controls.unlock();
+        
+        // Hide pickup hint
+        hidePickupHint();
     }
 }
 
@@ -2216,6 +2209,27 @@ function animate() {
         
         // Update bullet projectiles
         updateBulletProjectiles(delta);
+        
+        // Check if player is holding mouse button and needs to auto-reload
+        if (gameState.isMouseDown && gameState.ammo <= 0 && !gameState.isReloading) {
+            reload();
+        }
+        
+        // If using machine gun and holding mouse button, continue shooting
+        if (gameState.currentGunType === 'machineGun' && gameState.isMouseDown && 
+            gameState.ammo > 0 && !gameState.isReloading && time - lastShootTime > 100) {
+            shoot();
+            lastShootTime = time;
+        }
+        
+        // Check for nearby pickups and show hints
+        checkForNearbyPickups();
+        
+        // Check for health pickups that the player touches
+        checkForHealthPickups();
+        
+        // Check for expired pickups (items that have been around too long)
+        checkForExpiredPickups(time);
         
         // Apply gravity
         velocity.y -= gravity * delta;
@@ -2279,18 +2293,13 @@ function animate() {
             const pickup = bulletPickups[i];
             const distance = playerPosition.distanceTo(pickup.mesh.position);
             
-            // Remove pickups that have been around for more than 20 seconds
-            if (time - pickup.timeCreated > 20000) {
-                scene.remove(pickup.mesh);
-                bulletPickups.splice(i, 1);
-                continue;
-            }
+            // Timeout handling is now done in checkForExpiredPickups
             
             if (distance < 1.5) { // Pickup range
                 // Handle different pickup types
                 if (pickup.type === 'health') {
                     gameState.health = Math.min(100, gameState.health + pickup.health);
-                    playSound('pickupBullets'); // Reuse bullet pickup sound for now
+                    playSound('puckupHealth'); // Reuse bullet pickup sound for now
                     
                     scene.remove(pickup.mesh);
                     bulletPickups.splice(i, 1);
@@ -2499,4 +2508,414 @@ function animate() {
     
     renderer.render(scene, camera);
     checkGameOver();
+}
+
+// Create a sniper rifle pickup
+function createSniperRiflePickup(position) {
+    // Create a visual representation of the sniper rifle
+    const gunGroup = new THREE.Group();
+    
+    // Gun body
+    const gunGeometry = new THREE.BoxGeometry(0.08, 0.12, 0.7);
+    const gunMaterial = new THREE.MeshBasicMaterial({ color: 0x444444 });
+    const gunMesh = new THREE.Mesh(gunGeometry, gunMaterial);
+    
+    // Add barrel
+    const barrelGeometry = new THREE.CylinderGeometry(0.02, 0.02, 0.9, 8);
+    const barrelMaterial = new THREE.MeshBasicMaterial({ color: 0x444444 });
+    const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.z = -0.4;
+    gunMesh.add(barrel);
+    
+    // Add scope
+    const scopeGeometry = new THREE.CylinderGeometry(0.04, 0.04, 0.2, 8);
+    const scopeMaterial = new THREE.MeshBasicMaterial({ color: 0x111111 });
+    const scope = new THREE.Mesh(scopeGeometry, scopeMaterial);
+    scope.rotation.x = Math.PI / 2;
+    scope.position.y = 0.1;
+    scope.position.z = -0.1;
+    gunMesh.add(scope);
+    
+    // Position at the specified location
+    gunMesh.position.copy(position);
+    gunMesh.position.y = 0.5; // Slightly above ground
+    
+    // Add to scene
+    scene.add(gunMesh);
+    
+    // Create pickup object
+    const pickup = {
+        mesh: gunMesh,
+        type: 'sniperRifle',
+        timeCreated: performance.now(),
+        isActive: true // Flag to track if pickup is still active
+    };
+    
+    // Add floating animation
+    const floatAnimation = () => {
+        if (!pickup.isActive) return; // Stop animation if pickup is no longer active
+        
+        gunMesh.position.y = 0.5 + Math.sin(performance.now() * 0.002) * 0.1;
+        gunMesh.rotation.y += 0.01;
+        
+        requestAnimationFrame(floatAnimation);
+    };
+    
+    // Start the animation
+    floatAnimation();
+    
+    return pickup;
+}
+
+// Function to toggle zoom for sniper rifle
+function toggleZoom() {
+    if (gameState.currentGunType !== 'sniperRifle') return;
+    
+    gameState.isZoomed = !gameState.isZoomed;
+    
+    if (gameState.isZoomed) {
+        // Store original FOV
+        gameState.originalFOV = camera.fov;
+        
+        // Zoom in
+        camera.fov = 20; // Narrower FOV for zoom
+        camera.updateProjectionMatrix();
+        
+        // Add scope overlay
+        createScopeOverlay();
+        
+        // Hide weapon model when zoomed
+        sniperRifle.visible = false;
+    } else {
+        // Restore original FOV
+        camera.fov = gameState.originalFOV || 75;
+        camera.updateProjectionMatrix();
+        
+        // Remove scope overlay
+        removeScopeOverlay();
+        
+        // Show weapon model when not zoomed
+        sniperRifle.visible = true;
+    }
+}
+
+// Create scope overlay
+function createScopeOverlay() {
+    // Create scope overlay if it doesn't exist
+    if (!document.getElementById('scopeOverlay')) {
+        const scopeOverlay = document.createElement('div');
+        scopeOverlay.id = 'scopeOverlay';
+        scopeOverlay.style.position = 'absolute';
+        scopeOverlay.style.top = '0';
+        scopeOverlay.style.left = '0';
+        scopeOverlay.style.width = '100%';
+        scopeOverlay.style.height = '100%';
+        scopeOverlay.style.pointerEvents = 'none';
+        
+        // Create scope circle
+        const scopeCircle = document.createElement('div');
+        scopeCircle.style.position = 'absolute';
+        scopeCircle.style.top = '50%';
+        scopeCircle.style.left = '50%';
+        scopeCircle.style.transform = 'translate(-50%, -50%)';
+        scopeCircle.style.width = '80vh';
+        scopeCircle.style.height = '80vh';
+        scopeCircle.style.borderRadius = '50%';
+        scopeCircle.style.border = '2px solid black';
+        scopeCircle.style.boxShadow = '0 0 0 2000px rgba(0, 0, 0, 0.8)';
+        
+        // Create crosshair
+        const crosshairH = document.createElement('div');
+        crosshairH.style.position = 'absolute';
+        crosshairH.style.top = '50%';
+        crosshairH.style.left = '50%';
+        crosshairH.style.transform = 'translate(-50%, -50%)';
+        crosshairH.style.width = '40px';
+        crosshairH.style.height = '2px';
+        crosshairH.style.backgroundColor = 'red';
+        
+        const crosshairV = document.createElement('div');
+        crosshairV.style.position = 'absolute';
+        crosshairV.style.top = '50%';
+        crosshairV.style.left = '50%';
+        crosshairV.style.transform = 'translate(-50%, -50%)';
+        crosshairV.style.width = '2px';
+        crosshairV.style.height = '40px';
+        crosshairV.style.backgroundColor = 'red';
+        
+        scopeOverlay.appendChild(scopeCircle);
+        scopeOverlay.appendChild(crosshairH);
+        scopeOverlay.appendChild(crosshairV);
+        
+        document.body.appendChild(scopeOverlay);
+    }
+}
+
+// Remove scope overlay
+function removeScopeOverlay() {
+    const scopeOverlay = document.getElementById('scopeOverlay');
+    if (scopeOverlay) {
+        document.body.removeChild(scopeOverlay);
+    }
+}
+
+// Show pickup hint when player is near a gun
+function showPickupHint(gunType) {
+    // Create hint element if it doesn't exist
+    let hintEl = document.getElementById('pickupHint');
+    if (!hintEl) {
+        hintEl = document.createElement('div');
+        hintEl.id = 'pickupHint';
+        hintEl.style.position = 'absolute';
+        hintEl.style.bottom = '20%';
+        hintEl.style.left = '50%';
+        hintEl.style.transform = 'translate(-50%, 0)';
+        hintEl.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        hintEl.style.color = 'white';
+        hintEl.style.padding = '10px 20px';
+        hintEl.style.borderRadius = '5px';
+        hintEl.style.fontFamily = 'Arial, sans-serif';
+        hintEl.style.fontSize = '16px';
+        hintEl.style.textAlign = 'center';
+        hintEl.style.zIndex = '1000';
+        document.body.appendChild(hintEl);
+    }
+    
+    // Set the message based on gun type
+    let gunName = "gun";
+    switch(gunType) {
+        case 'pistol':
+            gunName = "Pistol";
+            break;
+        case 'machineGun':
+            gunName = "Machine Gun";
+            break;
+        case 'sniperRifle':
+            gunName = "Sniper Rifle";
+            break;
+    }
+    
+    hintEl.textContent = `Press E to pick up ${gunName}`;
+    hintEl.style.display = 'block';
+    
+    // Store the current time to hide the hint if no pickups are nearby
+    gameState.lastPickupHintTime = performance.now();
+}
+
+// Hide pickup hint
+function hidePickupHint() {
+    const hintEl = document.getElementById('pickupHint');
+    if (hintEl) {
+        hintEl.style.display = 'none';
+    }
+}
+
+// Check for nearby pickups and show hints
+function checkForNearbyPickups() {
+    if (gameState.gameOver) return;
+    
+    const playerPosition = new THREE.Vector3();
+    camera.getWorldPosition(playerPosition);
+    
+    // Reset nearby pickup flag
+    let foundNearbyPickup = false;
+    let nearestPickupType = null;
+    let nearestDistance = Infinity;
+    
+    // Check for machine gun pickups
+    for (const pickup of machineGunPickups) {
+        const distance = playerPosition.distanceTo(pickup.mesh.position);
+        
+        if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
+            nearestDistance = distance;
+            nearestPickupType = 'machineGun';
+            foundNearbyPickup = true;
+        }
+    }
+    
+    // Check for pistol pickups
+    for (const pickup of pistolPickups) {
+        const distance = playerPosition.distanceTo(pickup.mesh.position);
+        
+        if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
+            nearestDistance = distance;
+            nearestPickupType = 'pistol';
+            foundNearbyPickup = true;
+        }
+    }
+    
+    // Check for sniper rifle pickups
+    for (const pickup of sniperRiflePickups) {
+        const distance = playerPosition.distanceTo(pickup.mesh.position);
+        
+        if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
+            nearestDistance = distance;
+            nearestPickupType = 'sniperRifle';
+            foundNearbyPickup = true;
+        }
+    }
+    
+    // Show or hide hint based on nearby pickups
+    if (foundNearbyPickup) {
+        // Only show hint if pickup type changed or it's been more than 5 seconds
+        if (nearestPickupType !== gameState.nearbyPickup || 
+            performance.now() - gameState.lastPickupHintTime > 5000) {
+            showPickupHint(nearestPickupType);
+            gameState.nearbyPickup = nearestPickupType;
+        }
+    } else {
+        // Hide hint if no pickups are nearby
+        hidePickupHint();
+        gameState.nearbyPickup = null;
+    }
+}
+
+// Check for health pickups that the player touches
+function checkForHealthPickups() {
+    if (gameState.gameOver || gameState.health >= 100) return; // Skip if at max health
+    
+    const playerPosition = new THREE.Vector3();
+    camera.getWorldPosition(playerPosition);
+    
+    // Check for health pickups
+    for (let i = healthPickups.length - 1; i >= 0; i--) {
+        const pickup = healthPickups[i];
+        const distance = playerPosition.distanceTo(pickup.mesh.position);
+        
+        if (distance < 1.5) { // Closer range for automatic pickup
+            // Add health to player
+            gameState.health = Math.min(gameState.health + pickup.health, 100);
+            
+            // Mark pickup as inactive before removing it
+            pickup.isActive = false;
+            
+            // Remove pickup
+            scene.remove(pickup.mesh);
+            healthPickups.splice(i, 1);
+            
+            // Play pickup sound
+            playSound('puckupHealth');
+            
+            // Show notification
+            showNotification(`+${pickup.health} Health!`);
+            
+            updateUI();
+            return; // Exit after picking up
+        }
+    }
+}
+
+// Check for expired pickups (items that have been around too long)
+function checkForExpiredPickups(currentTime) {
+    const HEALTH_TIMEOUT = 15000; // 15 seconds for health pickups
+    const WEAPON_TIMEOUT = 30000; // 30 seconds for weapon pickups
+    const FADE_START = 3000; // Start fading 3 seconds before disappearing
+    
+    // Check for expired health pickups
+    for (let i = healthPickups.length - 1; i >= 0; i--) {
+        const pickup = healthPickups[i];
+        const age = currentTime - pickup.timeCreated;
+        
+        if (age > HEALTH_TIMEOUT) {
+            // Remove pickup
+            pickup.isActive = false;
+            scene.remove(pickup.mesh);
+            healthPickups.splice(i, 1);
+        } else if (age > HEALTH_TIMEOUT - FADE_START) {
+            // Fade out pickup
+            const opacity = 1 - ((age - (HEALTH_TIMEOUT - FADE_START)) / FADE_START);
+            if (pickup.mesh.material.opacity !== opacity) {
+                pickup.mesh.material.transparent = true;
+                pickup.mesh.material.opacity = opacity;
+            }
+        }
+    }
+    
+    // Check for expired bullet pickups
+    for (let i = bulletPickups.length - 1; i >= 0; i--) {
+        const pickup = bulletPickups[i];
+        const age = currentTime - pickup.timeCreated;
+        
+        if (age > HEALTH_TIMEOUT) {
+            // Remove pickup
+            pickup.isActive = false;
+            scene.remove(pickup.mesh);
+            bulletPickups.splice(i, 1);
+        } else if (age > HEALTH_TIMEOUT - FADE_START) {
+            // Fade out pickup
+            const opacity = 1 - ((age - (HEALTH_TIMEOUT - FADE_START)) / FADE_START);
+            if (pickup.mesh.material.opacity !== opacity) {
+                pickup.mesh.material.transparent = true;
+                pickup.mesh.material.opacity = opacity;
+            }
+        }
+    }
+    
+    // Check for expired machine gun pickups
+    for (let i = machineGunPickups.length - 1; i >= 0; i--) {
+        const pickup = machineGunPickups[i];
+        const age = currentTime - pickup.timeCreated;
+        
+        if (age > WEAPON_TIMEOUT) {
+            // Remove pickup
+            pickup.isActive = false;
+            scene.remove(pickup.mesh);
+            machineGunPickups.splice(i, 1);
+        } else if (age > WEAPON_TIMEOUT - FADE_START) {
+            // Fade out pickup
+            const opacity = 1 - ((age - (WEAPON_TIMEOUT - FADE_START)) / FADE_START);
+            fadePickupMesh(pickup.mesh, opacity);
+        }
+    }
+    
+    // Check for expired pistol pickups
+    for (let i = pistolPickups.length - 1; i >= 0; i--) {
+        const pickup = pistolPickups[i];
+        const age = currentTime - pickup.timeCreated;
+        
+        if (age > WEAPON_TIMEOUT) {
+            // Remove pickup
+            pickup.isActive = false;
+            scene.remove(pickup.mesh);
+            pistolPickups.splice(i, 1);
+        } else if (age > WEAPON_TIMEOUT - FADE_START) {
+            // Fade out pickup
+            const opacity = 1 - ((age - (WEAPON_TIMEOUT - FADE_START)) / FADE_START);
+            fadePickupMesh(pickup.mesh, opacity);
+        }
+    }
+    
+    // Check for expired sniper rifle pickups
+    for (let i = sniperRiflePickups.length - 1; i >= 0; i--) {
+        const pickup = sniperRiflePickups[i];
+        const age = currentTime - pickup.timeCreated;
+        
+        if (age > WEAPON_TIMEOUT) {
+            // Remove pickup
+            pickup.isActive = false;
+            scene.remove(pickup.mesh);
+            sniperRiflePickups.splice(i, 1);
+        } else if (age > WEAPON_TIMEOUT - FADE_START) {
+            // Fade out pickup
+            const opacity = 1 - ((age - (WEAPON_TIMEOUT - FADE_START)) / FADE_START);
+            fadePickupMesh(pickup.mesh, opacity);
+        }
+    }
+}
+
+// Helper function to fade out a pickup mesh (which might have child meshes)
+function fadePickupMesh(mesh, opacity) {
+    // Make sure the material is transparent
+    if (mesh.material) {
+        mesh.material.transparent = true;
+        mesh.material.opacity = opacity;
+    }
+    
+    // Apply to all children recursively
+    if (mesh.children && mesh.children.length > 0) {
+        for (const child of mesh.children) {
+            fadePickupMesh(child, opacity);
+        }
+    }
 }
