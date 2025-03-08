@@ -1652,11 +1652,6 @@ function reload() {
     updateUI();
 }
 
-// Toggle inventory display
-function toggleInventory() {
-    // This function has been removed as inventory is now part of the menu
-}
-
 // Create a red halo effect for player damage
 function createDamageOverlay() {
     const overlayEl = document.createElement('div');
