@@ -19,42 +19,39 @@ const shotgunPickups = [];
 const rocketLauncherPickups = []; // Add rocket launcher pickups array
 
 // Game state
-let gameState = {
+const gameState = {
     health: 100,
     ammo: 10,
     maxAmmo: 10,
-    level: 1,
     score: 0,
+    level: 1,
     gameOver: false,
-    showInventory: false,
-    soundEnabled: true,
-    brokenWindows: [], // Track which windows are broken
-    lastHitTime: 0, // Track when player was last hit
-    showingRoundMessage: false, // Track if wave message is showing
-    recoilActive: false, // Track if recoil is currently active
-    recoilRecovery: 0, // Track recoil recovery progress
-    currentGunType: 'pistol', // Current gun type: 'pistol', 'machineGun', 'sniperRifle', or 'shotgun'
-    isReloading: false, // Track if the gun is currently reloading
-    isMouseDown: false, // Track if mouse button is being held down
-    cameraOriginalY: null, // Store original camera position for recoil recovery
-    currentRecoil: { x: 0, y: 0 }, // Track recoil effect on bullets
-    isZoomed: false, // Track if sniper scope is zoomed in
+    isReloading: false,
+    isMouseDown: false,
+    currentGunType: 'pistol',
+    currentRecoil: { x: 0, y: 0 },
+    recoilActive: false,
+    recoilRecovery: 0,
+    cameraOriginalY: null,
+    isZoomed: false,
     originalFOV: 75, // Store original FOV for zoom
     lastPickupHintTime: 0, // Track when the last pickup hint was shown
     nearbyPickup: null, // Track the type of nearby pickup
     foundMachineGun: false,
     foundSniperRifle: false,
     foundShotgun: false,
-    foundRocketLauncher: false
+    foundRocketLauncher: false,
+    menuOpen: false, // Track if the menu is open
+    soundEnabled: true // Track if sound is enabled
 };
 
 // DOM elements
 const healthEl = document.getElementById('health');
 const ammoEl = document.getElementById('ammo');
-const gameOverEl = document.getElementById('gameOver');
-const restartButton = document.getElementById('restartButton');
-const inventoryEl = document.getElementById('inventory');
 const bulletsEl = document.getElementById('bullets');
+const gameOverEl = document.getElementById('gameOver');
+const finalScoreEl = document.getElementById('finalScore');
+const finalLevelEl = document.getElementById('finalLevel');
 const soundToggleEl = document.getElementById('soundToggle');
 
 // Scene setup
@@ -206,22 +203,22 @@ document.addEventListener('contextmenu', function(e) {
 
 // Event listeners
 document.addEventListener('mousedown', (event) => {
-    // Only handle left mouse button clicks (button 0)
-    if (event.button !== 0) return;
-    
-    if (!controls.isLocked) {
-        controls.lock();
-    } else if (!gameState.gameOver) {
-        gameState.isMouseDown = true;
-        shoot();
+    // Only handle left mouse button and when menu is not open
+    if (event.button === 0 && !gameState.menuOpen) {
+        if (controls.isLocked) {
+            gameState.isMouseDown = true;
+            shoot();
+        } else {
+            controls.lock();
+        }
     }
 });
 
 document.addEventListener('mouseup', (event) => {
-    // Only handle left mouse button release (button 0)
-    if (event.button !== 0) return;
-    
-    gameState.isMouseDown = false;
+    // Only handle left mouse button
+    if (event.button === 0) {
+        gameState.isMouseDown = false;
+    }
 });
 
 controls.addEventListener('lock', () => {
@@ -236,6 +233,15 @@ controls.addEventListener('unlock', () => {
 
 document.addEventListener('keydown', (event) => {
     if (gameState.gameOver) return;
+    
+    // Always allow ESC key to toggle menu
+    if (event.code === 'Escape') {
+        toggleMenu();
+        return;
+    }
+    
+    // Skip other keys if menu is open
+    if (gameState.menuOpen) return;
     
     switch (event.code) {
         case 'ArrowUp':
@@ -263,16 +269,36 @@ document.addEventListener('keydown', (event) => {
         case 'KeyR':
             reload();
             break;
-        case 'KeyI':
-            toggleInventory();
-            break;
         case 'KeyE':
             interactWithPickups();
+            break;
+        case 'Digit1':
+            // Switch to pistol if available
+            switchToWeapon('pistol');
+            break;
+        case 'Digit2':
+            // Switch to machine gun if available
+            switchToWeapon('machineGun');
+            break;
+        case 'Digit3':
+            // Switch to sniper rifle if available
+            switchToWeapon('sniperRifle');
+            break;
+        case 'Digit4':
+            // Switch to shotgun if available
+            switchToWeapon('shotgun');
+            break;
+        case 'Digit5':
+            // Switch to rocket launcher if available
+            switchToWeapon('rocketLauncher');
             break;
     }
 });
 
 document.addEventListener('keyup', (event) => {
+    // Skip if menu is open
+    if (gameState.menuOpen) return;
+    
     switch (event.code) {
         case 'ArrowUp':
         case 'KeyW':
@@ -626,16 +652,16 @@ function spawnEnemies() {
     }
     
     // Calculate number of enemies based on wave level
-    // Start with 10 enemies on wave 1, then add 2 more for each wave
-    const enemyCount = 10 + ((gameState.level - 1) * 2);
+    // Start with 10 enemies on wave 1, then add 5 more for each wave
+    const enemyCount = 10 + ((gameState.level - 1) * 5);
     
     // Calculate number of spider enemies (only appear after wave 1)
-    // Start with 0 spiders in wave 1, then 2 in wave 2, and increase by 1 each wave
-    const spiderCount = gameState.level > 1 ? 2 + (gameState.level - 2) : 0;
+    // Start with 0 spiders in wave 1, then 2 in wave 2, and increase by 3 each wave
+    const spiderCount = gameState.level > 1 ? 2 + (gameState.level - 2) * 3 : 0;
     
     // Calculate number of flying enemies (only appear after wave 2)
-    // Start with 0 flyers in waves 1-2, then 1 in wave 3, and increase by 1 each wave
-    const flyingCount = gameState.level > 2 ? 1 + (gameState.level - 3) : 0;
+    // Start with 0 flyers in waves 1-2, then 1 in wave 3, and increase by 2 each wave
+    const flyingCount = gameState.level > 2 ? 1 + (gameState.level - 3) * 2 : 0;
     
     // Calculate regular enemy count (total minus special types)
     const regularEnemyCount = enemyCount - spiderCount - flyingCount;
@@ -707,8 +733,8 @@ function createEnemy() {
 
 // Function to shoot
 function shoot() {
-    // Check if we're reloading
-    if (gameState.isReloading) return;
+    // Check if we're reloading or menu is open
+    if (gameState.isReloading || gameState.menuOpen) return;
     
     // Check if we have ammo for the current weapon
     if (gameState.ammo <= 0) {
@@ -1103,30 +1129,9 @@ function updateUI() {
         scoreDisplay.textContent = `Score: ${gameState.score}`;
     }
     
-    // Update inventory UI
-    document.getElementById('inv-health').textContent = gameState.health;
-    document.getElementById('inv-score').textContent = gameState.score;
-    document.getElementById('inv-level').textContent = gameState.level;
-    
-    // Update weapon info in inventory
-    const weaponNameEl = document.querySelector('.inventory-item:nth-child(1)');
-    if (weaponNameEl) {
-        let gunName;
-        switch(gameState.currentGunType) {
-            case 'pistol': gunName = "Cartoon Blaster"; break;
-            case 'machineGun': gunName = "Machine Gun"; break;
-            case 'sniperRifle': gunName = "Sniper Rifle"; break;
-            case 'shotgun': gunName = "Shotgun"; break;
-            case 'rocketLauncher': gunName = "Rocket Launcher"; break;
-            default: gunName = "Unknown Weapon";
-        }
-        weaponNameEl.textContent = `🔫 Weapon: ${gunName}`;
-    }
-    
-    // Update bullets info in inventory (hide it)
-    const bulletInventoryEl = document.querySelector('.inventory-item:nth-child(2)');
-    if (bulletInventoryEl) {
-        bulletInventoryEl.style.display = 'none';
+    // If menu is open, update menu stats
+    if (gameState.menuOpen) {
+        updateMenuStats();
     }
 }
 
@@ -1207,29 +1212,46 @@ function interactWithPickups() {
 
 // Function to restart game
 function restartGame() {
-    gameState = {
-        health: 100,
-        ammo: 10,
-        maxAmmo: 10,
-        level: 1,
-        score: 0,
-        gameOver: false,
-        recoilActive: false,
-        recoilRecovery: 0,
-        currentGunType: 'pistol', // Reset to default pistol
-        isReloading: false, // Reset reloading state
-        isMouseDown: false, // Reset mouse button state
-        cameraOriginalY: null, // Reset camera original position
-        currentRecoil: { x: 0, y: 0 }, // Reset recoil effect on bullets
-        isZoomed: false, // Reset sniper scope state
-        originalFOV: 75, // Reset original FOV
-        lastPickupHintTime: 0, // Reset when the last pickup hint was shown
-        nearbyPickup: null, // Reset the type of nearby pickup
-        foundMachineGun: false,
-        foundSniperRifle: false,
-        foundShotgun: false,
-        foundRocketLauncher: false
-    };
+    // Reset game state
+    gameState.health = 100;
+    gameState.ammo = 10;
+    gameState.maxAmmo = 10;
+    gameState.score = 0;
+    gameState.level = 1;
+    gameState.gameOver = false;
+    gameState.isReloading = false;
+    gameState.isMouseDown = false;
+    gameState.currentGunType = 'pistol';
+    gameState.currentRecoil = { x: 0, y: 0 };
+    gameState.recoilActive = false;
+    gameState.recoilRecovery = 0;
+    gameState.cameraOriginalY = null;
+    gameState.isZoomed = false;
+    gameState.originalFOV = 75; // Reset original FOV
+    gameState.lastPickupHintTime = 0; // Reset when the last pickup hint was shown
+    gameState.nearbyPickup = null; // Reset the type of nearby pickup
+    gameState.foundMachineGun = false;
+    gameState.foundSniperRifle = false;
+    gameState.foundShotgun = false;
+    gameState.foundRocketLauncher = false;
+    gameState.menuOpen = false; // Reset menu state
+    
+    // Hide menu if it's open
+    document.getElementById('menuScreen').style.display = 'none';
+    
+    // Reset camera position
+    camera.position.set(0, 1.6, 0);
+    camera.rotation.set(0, 0, 0);
+    
+    // Reset velocity
+    velocity.set(0, 0, 0);
+    
+    // Reset weapon visibility
+    weapon.visible = true;
+    machineGun.visible = false;
+    sniperRifle.visible = false;
+    shotgun.visible = false;
+    rocketLauncher.visible = false;
     
     // Reset enemy arrays
     for (const enemy of enemies) {
@@ -1279,31 +1301,12 @@ function restartGame() {
     }
     sniperRiflePickups.length = 0;
     
-    // Reset player position
-    camera.position.set(0, 1.6, 0);
-    velocity.set(0, 0, 0);
-    
-    // Reset weapon visibility
-    weapon.visible = true;
-    machineGun.visible = false;
-    sniperRifle.visible = false;
-    shotgun.visible = false;
-    
-    // Remove scope overlay if active
-    if (gameState.isZoomed) {
-        removeScopeOverlay();
-    }
-    
-    // Hide pickup hint
-    hidePickupHint();
-    
     // Spawn new enemies and pickups
     spawnEnemies();
     
     // Update UI
     updateUI();
     gameOverEl.style.display = 'none';
-    inventoryEl.style.display = 'none';
 }
 
 // Check for WebGL support - improved detection
@@ -1436,15 +1439,7 @@ function reload() {
 
 // Toggle inventory display
 function toggleInventory() {
-    gameState.showInventory = !gameState.showInventory;
-    inventoryEl.style.display = gameState.showInventory ? 'block' : 'none';
-    
-    // If showing inventory, pause the game by unlocking controls
-    if (gameState.showInventory) {
-        controls.unlock();
-    } else if (!gameState.gameOver) {
-        controls.lock();
-    }
+    // This function has been removed as inventory is now part of the menu
 }
 
 // Create a red halo effect for player damage
@@ -1595,16 +1590,18 @@ function init() {
     camera.add(shotgun);
     camera.add(rocketLauncher);
     
+    // Set up menu button event listeners
+    document.getElementById('resumeButton').addEventListener('click', toggleMenu);
+    document.getElementById('restartMenuButton').addEventListener('click', () => {
+        toggleMenu(); // Close menu
+        restartGame(); // Restart game
+    });
+    
     // Update UI after elements are initialized
     updateUI();
     
     // Spawn initial enemies
     spawnEnemies();
-    
-    // Initialize the game
-    animate();
-    
-    debugLog('Game initialized successfully!');
 }
 
 // Initialize the game
@@ -2220,11 +2217,8 @@ function checkGameOver() {
         gameState.gameOver = true;
         
         // Show game over screen
-        const scoreEl = document.getElementById('finalScore');
-        const levelEl = document.getElementById('finalLevel');
-        
-        if (scoreEl) scoreEl.textContent = gameState.score;
-        if (levelEl) levelEl.textContent = gameState.level;
+        finalScoreEl.textContent = gameState.score;
+        finalLevelEl.textContent = gameState.level;
         
         gameOverEl.style.display = 'block';
         controls.unlock();
@@ -2238,11 +2232,14 @@ function checkGameOver() {
 function animate() {
     requestAnimationFrame(animate);
     
-    if (controls.isLocked && !gameState.gameOver && !gameState.showInventory) {
-        const time = performance.now();
-        const delta = (time - prevTime) / 1000;
-        
-        // Process weapon recoil recovery
+    // Calculate delta time
+    const time = performance.now();
+    const delta = (time - prevTime) / 1000;
+    prevTime = time;
+    
+    // Skip game logic if game is over, menu is open, or controls are not locked
+    if (!gameState.gameOver && !gameState.menuOpen && controls.isLocked) {
+        // Process recoil recovery
         processRecoilRecovery(delta);
         
         // Update bullet projectiles
@@ -2723,11 +2720,9 @@ function animate() {
             // Check if enemy is close to player
             if (distanceToPlayer < 1.5) {
                 // Use the damage function to apply damage to player
-                playerTakeDamage(1, enemy.mesh.position);
+                playerTakeDamage(2, enemy.mesh.position);
             }
         }
-        
-        prevTime = time;
     }
     
     renderer.render(scene, camera);
@@ -3740,4 +3735,64 @@ function handleEnemyDefeat(enemy, position) {
             spawnEnemies();
         }, 2000);
     }
+}
+
+// Function to toggle the menu
+function toggleMenu() {
+    const menuScreen = document.getElementById('menuScreen');
+    
+    // Toggle menu state
+    gameState.menuOpen = !gameState.menuOpen;
+    
+    if (gameState.menuOpen) {
+        // Update menu stats
+        updateMenuStats();
+        
+        // Show menu
+        menuScreen.style.display = 'block';
+        
+        // Unlock pointer to allow interaction with menu
+        controls.unlock();
+        
+        // Reset movement keys to prevent movement when menu is closed
+        moveForward = false;
+        moveBackward = false;
+        moveLeft = false;
+        moveRight = false;
+    } else {
+        // Hide menu
+        menuScreen.style.display = 'none';
+        
+        // Lock pointer to resume game
+        controls.lock();
+    }
+}
+
+// Function to update menu stats
+function updateMenuStats() {
+    // Get weapon name based on current gun type
+    let weaponName;
+    switch (gameState.currentGunType) {
+        case 'pistol': weaponName = "Pistol"; break;
+        case 'machineGun': weaponName = "Machine Gun"; break;
+        case 'sniperRifle': weaponName = "Sniper Rifle"; break;
+        case 'shotgun': weaponName = "Shotgun"; break;
+        case 'rocketLauncher': weaponName = "Rocket Launcher"; break;
+        default: weaponName = "Unknown Weapon";
+    }
+    
+    // Safely update menu stats
+    const updateElement = (id, value) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.textContent = value;
+        }
+    };
+    
+    // Update menu stats
+    updateElement('menu-weapon', weaponName);
+    updateElement('menu-ammo', `${gameState.ammo}/${gameState.maxAmmo}`);
+    updateElement('menu-health', gameState.health);
+    updateElement('menu-score', gameState.score);
+    updateElement('menu-level', gameState.level);
 }
