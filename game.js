@@ -484,13 +484,18 @@ function spawnEnemies() {
         
         // Make enemies slower than player (player speed is 5.0)
         // Keep speed constant across all waves
-        const enemySpeed = 0.015 + (Math.random() * 0.005);
+        // const enemySpeed = 0.005 + (Math.random() * 0.005);
+        const enemySpeed = 0.01;
         
         enemies.push({
             mesh: enemy,
             health: 100,
             speed: enemySpeed,
-            bounceOffset: Math.random() * Math.PI * 2
+            bounceOffset: Math.random() * Math.PI * 2,
+            lastPosition: position.clone(), // Track last position to detect if stuck
+            stuckTime: 0, // Track how long the enemy has been stuck
+            pathfindingOffset: new THREE.Vector3(0, 0, 0), // Offset for pathfinding
+            lastPathChange: 0 // When the path was last changed
         });
         debugLog(`Added enemy at ${enemy.position.x}, ${enemy.position.y}, ${enemy.position.z} with speed ${enemySpeed}`);
     }
@@ -803,16 +808,116 @@ function animate() {
         // Update enemies
         for (const enemy of enemies) {
             // Calculate direction to player
-            const direction = new THREE.Vector3();
-            direction.subVectors(camera.position, enemy.mesh.position).normalize();
+            const directionToPlayer = new THREE.Vector3();
+            directionToPlayer.subVectors(camera.position, enemy.mesh.position).normalize();
             
             // Store original position for collision detection
             const originalEnemyPosition = enemy.mesh.position.clone();
             
-            // Move enemy towards player
+            // Check if enemy is stuck by comparing current position to last position
+            const movementAmount = enemy.mesh.position.distanceTo(enemy.lastPosition);
+            if (movementAmount < 0.01) {
+                enemy.stuckTime += delta;
+            } else {
+                enemy.stuckTime = 0;
+                // Only update last position if we've moved significantly
+                if (movementAmount > 0.05) {
+                    enemy.lastPosition.copy(enemy.mesh.position);
+                }
+            }
+            
+            // Check if there's an obstacle in the direct path to the player
+            const distanceToPlayer = enemy.mesh.position.distanceTo(camera.position);
+            const rayDirection = directionToPlayer.clone();
+            
+            // Create a raycaster to check for obstacles
+            const raycaster = new THREE.Raycaster(
+                enemy.mesh.position.clone(),
+                rayDirection,
+                0,
+                Math.min(distanceToPlayer, 5) // Only check up to 5 units or distance to player
+            );
+            
+            // Check for intersections with obstacles
+            const intersections = raycaster.intersectObjects(collisionObjects);
+            const pathBlocked = intersections.length > 0;
+            
+            // Determine if we need to change path
+            const needsNewPath = (pathBlocked || enemy.stuckTime > 0.5) && 
+                                (time - enemy.lastPathChange > 1000);
+            
+            if (needsNewPath) {
+                // Try to find a better path around obstacles
+                const possibleDirections = [];
+                
+                // Try 8 different directions around the circle
+                for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
+                    const testDirection = new THREE.Vector3(
+                        Math.sin(angle),
+                        0,
+                        Math.cos(angle)
+                    );
+                    
+                    // Create a test raycaster
+                    const testRaycaster = new THREE.Raycaster(
+                        enemy.mesh.position.clone(),
+                        testDirection,
+                        0,
+                        2 // Check 2 units ahead
+                    );
+                    
+                    // Check if this direction is clear
+                    const testIntersections = testRaycaster.intersectObjects(collisionObjects);
+                    
+                    if (testIntersections.length === 0) {
+                        // This direction is clear, score it based on how close it is to the player direction
+                        const dotProduct = testDirection.dot(directionToPlayer);
+                        possibleDirections.push({
+                            direction: testDirection,
+                            score: dotProduct // Higher score means closer to player direction
+                        });
+                    }
+                }
+                
+                // Sort directions by score (highest first)
+                possibleDirections.sort((a, b) => b.score - a.score);
+                
+                if (possibleDirections.length > 0) {
+                    // Choose the best direction (closest to player that's not blocked)
+                    enemy.pathfindingOffset = possibleDirections[0].direction.clone();
+                    enemy.pathfindingOffset.sub(directionToPlayer);
+                    enemy.lastPathChange = time;
+                    debugLog('Enemy found new path around obstacle');
+                } else {
+                    // All directions are blocked, try a random direction
+                    const randomAngle = Math.random() * Math.PI * 2;
+                    const randomDirection = new THREE.Vector3(
+                        Math.sin(randomAngle),
+                        0,
+                        Math.cos(randomAngle)
+                    );
+                    
+                    enemy.pathfindingOffset = randomDirection.clone();
+                    enemy.pathfindingOffset.sub(directionToPlayer);
+                    enemy.lastPathChange = time;
+                    debugLog('Enemy trying random direction - all paths blocked');
+                }
+            }
+            
+            // Gradually reduce pathfinding offset over time if we're not stuck
+            if (enemy.stuckTime < 0.1 && time - enemy.lastPathChange > 2000) {
+                enemy.pathfindingOffset.multiplyScalar(0.95);
+            }
+            
+            // Calculate final movement direction with pathfinding offset
+            const finalDirection = new THREE.Vector3()
+                .addVectors(directionToPlayer, enemy.pathfindingOffset)
+                .normalize();
+            
+            // Move enemy towards player with pathfinding
             const newPosition = enemy.mesh.position.clone();
-            newPosition.x += direction.x * enemy.speed;
-            newPosition.z += direction.z * enemy.speed;
+            newPosition.x += finalDirection.x * enemy.speed;
+            newPosition.z += finalDirection.z * enemy.speed;
             
             // Check for collisions with buildings
             let enemyCollision = false;
@@ -838,6 +943,9 @@ function animate() {
             // If collision detected, revert to original position
             if (enemyCollision) {
                 enemy.mesh.position.copy(originalEnemyPosition);
+                
+                // Increase stuck time when collision occurs
+                enemy.stuckTime += delta * 2; // Double the stuck time on collision
             }
             
             // Bouncy cartoon animation
@@ -847,7 +955,6 @@ function animate() {
             enemy.mesh.lookAt(camera.position);
             
             // Check if enemy is close to player
-            const distanceToPlayer = enemy.mesh.position.distanceTo(camera.position);
             if (distanceToPlayer < 1.5) {
                 // Use the new damage function instead of directly modifying health
                 playerTakeDamage(1, enemy.mesh.position);
