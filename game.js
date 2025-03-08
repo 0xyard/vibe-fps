@@ -16,6 +16,7 @@ const pistolPickups = [];
 const sniperRiflePickups = [];
 const healthPickups = [];
 const shotgunPickups = [];
+const rocketLauncherPickups = []; // Add rocket launcher pickups array
 
 // Game state
 let gameState = {
@@ -40,7 +41,11 @@ let gameState = {
     isZoomed: false, // Track if sniper scope is zoomed in
     originalFOV: 75, // Store original FOV for zoom
     lastPickupHintTime: 0, // Track when the last pickup hint was shown
-    nearbyPickup: null // Track the type of nearby pickup
+    nearbyPickup: null, // Track the type of nearby pickup
+    foundMachineGun: false,
+    foundSniperRifle: false,
+    foundShotgun: false,
+    foundRocketLauncher: false
 };
 
 // DOM elements
@@ -80,6 +85,7 @@ let weapon;
 let machineGun;
 let sniperRifle;
 let shotgun;
+let rocketLauncher; // Add rocket launcher variable
 
 scene.add(camera);
 
@@ -119,7 +125,8 @@ const soundEffects = {
     playerHurt: new THREE.Audio(audioListener), // New sound for player getting hit
     sniperShoot: new THREE.Audio(audioListener), // New sound for sniper rifle
     explosion: new THREE.Audio(audioListener), // New sound for explosions
-    shotgunBlast: new THREE.Audio(audioListener) // New sound for shotgun
+    shotgunBlast: new THREE.Audio(audioListener), // New sound for shotgun
+    rocketLaunch: new THREE.Audio(audioListener) // New sound for rocket launcher
 };
 
 // Audio loader
@@ -169,6 +176,12 @@ function loadSoundEffects() {
     audioLoader.load('https://cdn.freesound.org/previews/573/573269_4056087-lq.mp3', function(buffer) {
         soundEffects.shotgunBlast.setBuffer(buffer);
         soundEffects.shotgunBlast.setVolume(0.6);
+    });
+    
+    // Rocket launch sound effect
+    audioLoader.load('https://cdn.freesound.org/previews/574/574269_4056087-lq.mp3', function(buffer) {
+        soundEffects.rocketLaunch.setBuffer(buffer);
+        soundEffects.rocketLaunch.setVolume(0.5);
     });
 }
 
@@ -719,6 +732,8 @@ function shoot() {
         playSound('sniperShoot');
     } else if (gameState.currentGunType === 'shotgun') {
         playSound('shotgunBlast');
+    } else if (gameState.currentGunType === 'rocketLauncher') {
+        playSound('rocketLaunch');
     } else {
         playSound('shoot');
     }
@@ -751,6 +766,8 @@ function shoot() {
             sniperRifle.localToWorld(bulletStartPosition);
         } else if (gameState.currentGunType === 'shotgun') {
             shotgun.localToWorld(bulletStartPosition);
+        } else if (gameState.currentGunType === 'rocketLauncher') {
+            rocketLauncher.localToWorld(bulletStartPosition);
         }
     }
     
@@ -808,6 +825,16 @@ function shoot() {
         }
         
         // No need to add a projectile at the end since we've already added all pellets
+        return;
+    } else if (gameState.currentGunType === 'rocketLauncher') {
+        // Create rocket projectile
+        projectile = createRocketProjectile(bulletStartPosition, shootDirection);
+        
+        // Create muzzle flash
+        createMuzzleFlash(bulletStartPosition);
+        
+        // Add to projectiles array
+        bulletProjectiles.push(projectile);
         return;
     } else {
         // Create bullet projectile
@@ -1090,6 +1117,7 @@ function updateUI() {
             case 'machineGun': gunName = "Machine Gun"; break;
             case 'sniperRifle': gunName = "Sniper Rifle"; break;
             case 'shotgun': gunName = "Shotgun"; break;
+            case 'rocketLauncher': gunName = "Rocket Launcher"; break;
             default: gunName = "Unknown Weapon";
         }
         weaponNameEl.textContent = `🔫 Weapon: ${gunName}`;
@@ -1109,198 +1137,72 @@ function interactWithPickups() {
     const playerPosition = new THREE.Vector3();
     camera.getWorldPosition(playerPosition);
     
-    // Health pickups are now automatically picked up when touched
-    // No need to check for them here
-    
-    // Check for machine gun pickups
-    for (let i = machineGunPickups.length - 1; i >= 0; i--) {
-        const pickup = machineGunPickups[i];
-        const distance = playerPosition.distanceTo(pickup.mesh.position);
-        
-        if (distance < 2) { // Interaction range
-            // Drop current gun and create a pickup for it
-            const dropPosition = playerPosition.clone();
-            dropPosition.y = 0.5; // Slightly above ground
+    // Helper function to handle weapon pickup
+    function handleWeaponPickup(pickupArray, pickupType, ammoAmount, pickupName) {
+        for (let i = pickupArray.length - 1; i >= 0; i--) {
+            const pickup = pickupArray[i];
+            const distance = playerPosition.distanceTo(pickup.mesh.position);
             
-            if (gameState.currentGunType === 'pistol') {
-                pistolPickups.push(createPistolPickup(dropPosition));
-            } else if (gameState.currentGunType === 'sniperRifle') {
-                sniperRiflePickups.push(createSniperRiflePickup(dropPosition));
+            if (distance < 2) { // Interaction range
+                // Drop current gun and create a pickup for it
+                const dropPosition = playerPosition.clone();
+                dropPosition.y = 0.5; // Slightly above ground
+                
+                // Create pickup for current weapon
+                if (gameState.currentGunType === 'pistol') {
+                    pistolPickups.push(createPistolPickup(dropPosition));
+                } else if (gameState.currentGunType === 'machineGun') {
+                    machineGunPickups.push(createMachineGunPickup(dropPosition));
+                } else if (gameState.currentGunType === 'sniperRifle') {
+                    sniperRiflePickups.push(createSniperRiflePickup(dropPosition));
+                } else if (gameState.currentGunType === 'shotgun') {
+                    shotgunPickups.push(createShotgunPickup(dropPosition));
+                } else if (gameState.currentGunType === 'rocketLauncher') {
+                    rocketLauncherPickups.push(createRocketLauncherPickup(dropPosition));
+                }
+                
+                // Pick up new weapon
+                gameState.currentGunType = pickupType;
+                gameState.ammo = gameState.maxAmmo = ammoAmount;
+                
+                // Update weapon visibility
+                weapon.visible = pickupType === 'pistol';
+                machineGun.visible = pickupType === 'machineGun';
+                sniperRifle.visible = pickupType === 'sniperRifle';
+                shotgun.visible = pickupType === 'shotgun';
+                rocketLauncher.visible = pickupType === 'rocketLauncher';
+                
+                // Reset zoom if coming from sniper rifle
+                if (gameState.isZoomed) {
+                    toggleZoom();
+                }
+                
+                // Mark pickup as inactive before removing it
+                pickup.isActive = false;
+                
+                // Remove pickup
+                scene.remove(pickup.mesh);
+                pickupArray.splice(i, 1);
+                
+                // Play pickup sound
+                playSound('pickupHealth');
+                
+                // Show notification
+                showNotification(`${pickupName} acquired!`);
+                
+                updateUI();
+                return true; // Indicate pickup was successful
             }
-            
-            // Pick up machine gun
-            gameState.currentGunType = 'machineGun';
-            gameState.ammo = gameState.maxAmmo = 30; // Machine gun has 30 rounds
-            
-            // Update weapon visibility
-            weapon.visible = false;
-            machineGun.visible = true;
-            sniperRifle.visible = false;
-            
-            // Reset zoom if coming from sniper rifle
-            if (gameState.isZoomed) {
-                toggleZoom();
-            }
-            
-            // Mark pickup as inactive before removing it
-            pickup.isActive = false;
-            
-            // Remove pickup
-            scene.remove(pickup.mesh);
-            machineGunPickups.splice(i, 1);
-            
-            // Play pickup sound
-            playSound('pickupHealth');
-            
-            // Show notification
-            showNotification("Machine Gun acquired!");
-            
-            updateUI();
-            return; // Exit after picking up
         }
+        return false; // No pickup occurred
     }
     
-    // Check for pistol pickups
-    for (let i = pistolPickups.length - 1; i >= 0; i--) {
-        const pickup = pistolPickups[i];
-        const distance = playerPosition.distanceTo(pickup.mesh.position);
-        
-        if (distance < 2) { // Interaction range
-            // Drop current gun and create a pickup for it
-            const dropPosition = playerPosition.clone();
-            dropPosition.y = 0.5; // Slightly above ground
-            
-            if (gameState.currentGunType === 'machineGun') {
-                machineGunPickups.push(createMachineGunPickup(dropPosition));
-            } else if (gameState.currentGunType === 'sniperRifle') {
-                sniperRiflePickups.push(createSniperRiflePickup(dropPosition));
-            }
-            
-            // Pick up pistol
-            gameState.currentGunType = 'pistol';
-            gameState.ammo = gameState.maxAmmo = 10; // Pistol has 10 rounds
-            
-            // Update weapon visibility
-            weapon.visible = true;
-            machineGun.visible = false;
-            sniperRifle.visible = false;
-            
-            // Reset zoom if coming from sniper rifle
-            if (gameState.isZoomed) {
-                toggleZoom();
-            }
-            
-            // Mark pickup as inactive before removing it
-            pickup.isActive = false;
-            
-            // Remove pickup
-            scene.remove(pickup.mesh);
-            pistolPickups.splice(i, 1);
-            
-            // Play pickup sound
-            playSound('pickupHealth');
-            
-            // Show notification
-            showNotification("Pistol acquired!");
-            
-            updateUI();
-            return; // Exit after picking up
-        }
-    }
-    
-    // Check for sniper rifle pickups
-    for (let i = sniperRiflePickups.length - 1; i >= 0; i--) {
-        const pickup = sniperRiflePickups[i];
-        const distance = playerPosition.distanceTo(pickup.mesh.position);
-        
-        if (distance < 2) { // Interaction range
-            // Drop current gun and create a pickup for it
-            const dropPosition = playerPosition.clone();
-            dropPosition.y = 0.5; // Slightly above ground
-            
-            if (gameState.currentGunType === 'pistol') {
-                pistolPickups.push(createPistolPickup(dropPosition));
-            } else if (gameState.currentGunType === 'machineGun') {
-                machineGunPickups.push(createMachineGunPickup(dropPosition));
-            }
-            
-            // Pick up sniper rifle
-            gameState.currentGunType = 'sniperRifle';
-            gameState.ammo = gameState.maxAmmo = 5; // Sniper rifle has 5 rounds
-            
-            // Update weapon visibility
-            weapon.visible = false;
-            machineGun.visible = false;
-            sniperRifle.visible = true;
-            
-            // Mark pickup as inactive before removing it
-            pickup.isActive = false;
-            
-            // Remove pickup
-            scene.remove(pickup.mesh);
-            sniperRiflePickups.splice(i, 1);
-            
-            // Play pickup sound
-            playSound('pickupHealth');
-            
-            // Show notification
-            showNotification("Sniper Rifle acquired!");
-            
-            updateUI();
-            return; // Exit after picking up
-        }
-    }
-    
-    // Check for shotgun pickups
-    for (let i = shotgunPickups.length - 1; i >= 0; i--) {
-        const pickup = shotgunPickups[i];
-        const distance = playerPosition.distanceTo(pickup.mesh.position);
-        
-        if (distance < 2) { // Interaction range
-            // Drop current gun and create a pickup for it
-            const dropPosition = playerPosition.clone();
-            dropPosition.y = 0.5; // Slightly above ground
-            
-            if (gameState.currentGunType === 'pistol') {
-                pistolPickups.push(createPistolPickup(dropPosition));
-            } else if (gameState.currentGunType === 'machineGun') {
-                machineGunPickups.push(createMachineGunPickup(dropPosition));
-            } else if (gameState.currentGunType === 'sniperRifle') {
-                sniperRiflePickups.push(createSniperRiflePickup(dropPosition));
-            }
-            
-            // Pick up shotgun
-            gameState.currentGunType = 'shotgun';
-            gameState.ammo = gameState.maxAmmo = 8; // Shotgun has 8 shells
-            
-            // Update weapon visibility
-            weapon.visible = false;
-            machineGun.visible = false;
-            sniperRifle.visible = false;
-            shotgun.visible = true;
-            
-            // Reset zoom if coming from sniper rifle
-            if (gameState.isZoomed) {
-                toggleZoom();
-            }
-            
-            // Mark pickup as inactive before removing it
-            pickup.isActive = false;
-            
-            // Remove pickup
-            scene.remove(pickup.mesh);
-            shotgunPickups.splice(i, 1);
-            
-            // Play pickup sound
-            playSound('pickupBullets');
-            
-            // Show notification
-            showNotification("Shotgun acquired!");
-            
-            updateUI();
-            return; // Exit after picking up
-        }
-    }
+    // Check all weapon pickups in order of priority
+    if (handleWeaponPickup(machineGunPickups, 'machineGun', 30, 'Machine Gun')) return;
+    if (handleWeaponPickup(sniperRiflePickups, 'sniperRifle', 5, 'Sniper Rifle')) return;
+    if (handleWeaponPickup(shotgunPickups, 'shotgun', 8, 'Shotgun')) return;
+    if (handleWeaponPickup(rocketLauncherPickups, 'rocketLauncher', 5, 'Rocket Launcher')) return;
+    if (handleWeaponPickup(pistolPickups, 'pistol', 10, 'Pistol')) return;
 }
 
 // Function to restart game
@@ -1322,7 +1224,11 @@ function restartGame() {
         isZoomed: false, // Reset sniper scope state
         originalFOV: 75, // Reset original FOV
         lastPickupHintTime: 0, // Reset when the last pickup hint was shown
-        nearbyPickup: null // Reset the type of nearby pickup
+        nearbyPickup: null, // Reset the type of nearby pickup
+        foundMachineGun: false,
+        foundSniperRifle: false,
+        foundShotgun: false,
+        foundRocketLauncher: false
     };
     
     // Reset enemy arrays
@@ -1356,6 +1262,7 @@ function restartGame() {
         pickup.isActive = false; // Mark as inactive to stop animations
         scene.remove(pickup.mesh);
     }
+    
     machineGunPickups.length = 0;
     
     // Remove all pistol pickups
@@ -1380,6 +1287,7 @@ function restartGame() {
     weapon.visible = true;
     machineGun.visible = false;
     sniperRifle.visible = false;
+    shotgun.visible = false;
     
     // Remove scope overlay if active
     if (gameState.isZoomed) {
@@ -1680,10 +1588,12 @@ function init() {
     machineGun = createMachineGun();
     sniperRifle = createSniperRifle();
     shotgun = createShotgun();
+    rocketLauncher = createRocketLauncher();
     camera.add(weapon);
     camera.add(machineGun);
     camera.add(sniperRifle);
     camera.add(shotgun);
+    camera.add(rocketLauncher);
     
     // Update UI after elements are initialized
     updateUI();
@@ -1777,24 +1687,20 @@ function createBulletProjectile(position, direction) {
 
 // Update bullet projectiles
 function updateBulletProjectiles(delta) {
-    // Update each bullet's position
+    // Update each bullet
     for (let i = bulletProjectiles.length - 1; i >= 0; i--) {
         const bullet = bulletProjectiles[i];
+        const bulletPosition = bullet.mesh.position;
         
         // Move bullet forward
         const moveDistance = bullet.speed * delta;
-        bullet.mesh.position.x += bullet.direction.x * moveDistance;
-        bullet.mesh.position.y += bullet.direction.y * moveDistance;
-        bullet.mesh.position.z += bullet.direction.z * moveDistance;
-        
-        // Update total distance traveled
         bullet.distance += moveDistance;
+        bulletPosition.add(bullet.direction.clone().multiplyScalar(moveDistance));
         
-        // Check for collisions with objects
-        const bulletPosition = bullet.mesh.position.clone();
+        // Flag to track if bullet hit an enemy
+        let hitEnemy = false;
         
         // Check for collisions with enemies
-        let hitEnemy = false;
         for (let j = 0; j < enemies.length; j++) {
             const enemy = enemies[j];
             const distance = bulletPosition.distanceTo(enemy.mesh.position);
@@ -1802,6 +1708,17 @@ function updateBulletProjectiles(delta) {
             // If bullet hits enemy (using a simple distance check)
             if (distance < 0.8) { // Enemy hit radius
                 hitEnemy = true;
+                
+                // Special handling for rockets - create explosion and don't continue with normal hit logic
+                if (bullet.isRocket) {
+                    // Create explosion at impact point
+                    createExplosion(bulletPosition.clone());
+                    
+                    // Remove rocket
+                    scene.remove(bullet.mesh);
+                    bulletProjectiles.splice(i, 1);
+                    break;
+                }
                 
                 // Damage enemy
                 enemy.health -= bullet.damage;
@@ -1837,24 +1754,28 @@ function updateBulletProjectiles(delta) {
                     
                     // Random drop chance
                     const dropRoll = Math.random();
-                    if (dropRoll < 0.1) {
-                        // 10% chance to drop health
+                    if (dropRoll < 0.05) {
+                        // 5% chance to drop health
                         healthPickups.push(createHealthPickup(enemyPosition));
                         debugLog('Enemy dropped health');
-                    } else if (dropRoll < 0.3) {
-                        // 20% chance to drop machine gun
+                    } else if (dropRoll < 0.1) {
+                        // 5% chance to drop machine gun
                         machineGunPickups.push(createMachineGunPickup(enemyPosition));
                         debugLog('Enemy dropped machine gun');
-                    } else if (dropRoll < 0.35) {
+                    } else if (dropRoll < 0.15) {
                         // 5% chance to drop sniper rifle (rare)
                         sniperRiflePickups.push(createSniperRiflePickup(enemyPosition));
                         debugLog('Enemy dropped sniper rifle');
-                    } else if (dropRoll < 0.4) {
+                    } else if (dropRoll < 0.2) {
                         // 5% chance to drop shotgun
                         shotgunPickups.push(createShotgunPickup(enemyPosition));
                         debugLog('Enemy dropped shotgun');
+                    } else if (dropRoll < 0.25) {
+                        // 5% chance to drop rocket launcher (very rare)
+                        rocketLauncherPickups.push(createRocketLauncherPickup(enemyPosition));
+                        debugLog('Enemy dropped rocket launcher');
                     } else {
-                        // 40% chance to drop nothing
+                        // 75% chance to drop nothing
                         debugLog('Enemy dropped nothing');
                     }
                     
@@ -1892,8 +1813,13 @@ function updateBulletProjectiles(delta) {
         if (intersects.length > 0) {
             // Bullet hit environment
             
-            // Create impact effect
-            createBulletImpact(bulletPosition, bullet.direction);
+            // Special handling for rockets - create explosion
+            if (bullet.isRocket) {
+                createExplosion(bulletPosition.clone());
+            } else {
+                // Create impact effect for regular bullets
+                createBulletImpact(bulletPosition, bullet.direction);
+            }
             
             // Remove bullet
             scene.remove(bullet.mesh);
@@ -2849,6 +2775,10 @@ function showPickupHint(gunType) {
         case 'shotgun':
             gunName = "Shotgun";
             break;
+        case 'rocketLauncher':
+            gunName = "Rocket Launcher";
+            break;
+        default: gunName = "Unknown Weapon";
     }
     
     hintEl.textContent = `Press E to pick up ${gunName}`;
@@ -3205,4 +3135,412 @@ function createShotgunPickup(position) {
     floatAnimation();
     
     return pickup;
+}
+
+// Create a rocket launcher
+function createRocketLauncher() {
+    debugLog('Creating rocket launcher');
+    // Create a cartoon-style rocket launcher
+    const weaponGroup = new THREE.Group();
+    
+    // Main tube
+    const tubeGeometry = new THREE.CylinderGeometry(0.08, 0.08, 0.7, 16);
+    const tubeMaterial = new THREE.MeshBasicMaterial({ color: 0x444444 });
+    const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
+    tube.rotation.z = Math.PI / 2; // Rotate to horizontal position
+    
+    // End cap with opening
+    const capGeometry = new THREE.CylinderGeometry(0.1, 0.1, 0.05, 16);
+    const capMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
+    const cap = new THREE.Mesh(capGeometry, capMaterial);
+    cap.rotation.z = Math.PI / 2;
+    cap.position.x = 0.35;
+    
+    // Inner tube (darker color)
+    const innerGeometry = new THREE.CylinderGeometry(0.06, 0.06, 0.72, 16);
+    const innerMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
+    const innerTube = new THREE.Mesh(innerGeometry, innerMaterial);
+    innerTube.rotation.z = Math.PI / 2;
+    innerTube.position.z = 0.01; // Slightly in front
+    
+    // Handle
+    const handleGeometry = new THREE.BoxGeometry(0.15, 0.1, 0.04);
+    const handleMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
+    const handle = new THREE.Mesh(handleGeometry, handleMaterial);
+    handle.position.x = -0.2;
+    handle.position.y = -0.15;
+    
+    // Grip
+    const gripGeometry = new THREE.BoxGeometry(0.1, 0.2, 0.04);
+    const gripMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
+    const grip = new THREE.Mesh(gripGeometry, gripMaterial);
+    grip.position.x = -0.1;
+    grip.position.y = -0.25;
+    
+    // Sight on top
+    const sightGeometry = new THREE.BoxGeometry(0.3, 0.03, 0.03);
+    const sightMaterial = new THREE.MeshBasicMaterial({ color: 0x111111 });
+    const sight = new THREE.Mesh(sightGeometry, sightMaterial);
+    sight.position.y = 0.1;
+    
+    // Add all parts to the weapon group
+    weaponGroup.add(tube);
+    weaponGroup.add(cap);
+    weaponGroup.add(innerTube);
+    weaponGroup.add(handle);
+    weaponGroup.add(grip);
+    weaponGroup.add(sight);
+    
+    // Position the weapon
+    weaponGroup.position.set(0.3, -0.3, -0.5);
+    weaponGroup.visible = false; // Hide initially
+    
+    return weaponGroup;
+}
+
+// Create a rocket projectile
+function createRocketProjectile(position, direction) {
+    // Create rocket geometry and material
+    const rocketGroup = new THREE.Group();
+    
+    // Rocket body
+    const bodyGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 8);
+    const bodyMaterial = new THREE.MeshBasicMaterial({ color: 0x777777 });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    body.rotation.x = Math.PI / 2; // Orient along z-axis
+    rocketGroup.add(body);
+    
+    // Rocket nose cone
+    const noseGeometry = new THREE.ConeGeometry(0.05, 0.1, 8);
+    const noseMaterial = new THREE.MeshBasicMaterial({ color: 0xFF0000 });
+    const nose = new THREE.Mesh(noseGeometry, noseMaterial);
+    nose.rotation.x = Math.PI / 2; // Orient along z-axis
+    nose.position.z = -0.2; // Position at front of rocket
+    rocketGroup.add(nose);
+    
+    // Rocket fins
+    const finGeometry = new THREE.BoxGeometry(0.1, 0.02, 0.05);
+    const finMaterial = new THREE.MeshBasicMaterial({ color: 0x555555 });
+    
+    // Add 4 fins around the rocket
+    for (let i = 0; i < 4; i++) {
+        const fin = new THREE.Mesh(finGeometry, finMaterial);
+        fin.position.z = 0.1; // Position at back of rocket
+        fin.rotation.z = (Math.PI / 2) * i; // Rotate around rocket body
+        fin.position.x = Math.sin((Math.PI / 2) * i) * 0.06; // Position away from center
+        fin.position.y = Math.cos((Math.PI / 2) * i) * 0.06;
+        rocketGroup.add(fin);
+    }
+    
+    // Set initial position (at gun barrel)
+    rocketGroup.position.copy(position);
+    
+    // Add to scene
+    scene.add(rocketGroup);
+    
+    // Add rocket trail effect (particle system)
+    const trailGeometry = new THREE.CylinderGeometry(0.03, 0.01, 0.5, 8);
+    const trailMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xFF6600,
+        transparent: true,
+        opacity: 0.7
+    });
+    const trail = new THREE.Mesh(trailGeometry, trailMaterial);
+    trail.rotation.x = Math.PI / 2;
+    trail.position.z = 0.3; // Position behind the rocket
+    rocketGroup.add(trail);
+    
+    // Return rocket object with metadata
+    return {
+        mesh: rocketGroup,
+        direction: direction.clone(),
+        speed: 15, // Slower than bullets
+        distance: 0,
+        maxDistance: 100,
+        damage: 0, // Damage is done by explosion, not direct hit
+        isRocket: true, // Flag as rocket for special handling
+        timeCreated: performance.now()
+    };
+}
+
+// Create an explosion effect
+function createExplosion(position) {
+    // Create explosion group
+    const explosionGroup = new THREE.Group();
+    explosionGroup.position.copy(position);
+    
+    // Create main explosion sphere
+    const explosionGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+    const explosionMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xFF6600,
+        transparent: true,
+        opacity: 0.8
+    });
+    const explosion = new THREE.Mesh(explosionGeometry, explosionMaterial);
+    explosionGroup.add(explosion);
+    
+    // Create outer explosion sphere
+    const outerGeometry = new THREE.SphereGeometry(0.8, 16, 16);
+    const outerMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xFF9900,
+        transparent: true,
+        opacity: 0.5
+    });
+    const outer = new THREE.Mesh(outerGeometry, outerMaterial);
+    explosionGroup.add(outer);
+    
+    // Add to scene
+    scene.add(explosionGroup);
+    
+    // Play explosion sound
+    playSound('explosion');
+    
+    // Animate explosion
+    const startTime = performance.now();
+    const duration = 500; // 500ms explosion duration
+    const maxRadius = 5; // Maximum explosion radius
+    
+    // Damage enemies within explosion radius
+    const explosionDamage = 200; // High damage
+    const explosionRadius = 5; // Large radius
+    
+    // Check for enemies in explosion radius
+    for (let i = 0; i < enemies.length; i++) {
+        const enemy = enemies[i];
+        const distance = enemy.mesh.position.distanceTo(position);
+        
+        if (distance <= explosionRadius) {
+            // Calculate damage based on distance (more damage closer to explosion)
+            const damageMultiplier = 1 - (distance / explosionRadius);
+            const damage = Math.floor(explosionDamage * damageMultiplier);
+            
+            // Apply damage to enemy
+            enemy.health -= damage;
+            
+            // Apply force to push enemy away from explosion
+            const pushDirection = new THREE.Vector3()
+                .subVectors(enemy.mesh.position, position)
+                .normalize();
+            
+            // Push distance based on proximity to explosion
+            const pushStrength = 2 * (1 - (distance / explosionRadius));
+            enemy.mesh.position.add(pushDirection.multiplyScalar(pushStrength));
+            
+            // Check if enemy is defeated
+            if (enemy.health <= 0) {
+                // Remove enemy
+                scene.remove(enemy.mesh);
+                
+                // Update score
+                gameState.score += 100;
+                
+                // Remove from array
+                enemies.splice(i, 1);
+                i--; // Adjust index after removal
+                
+                // Random drop chance
+                const dropRoll = Math.random();
+                if (dropRoll < 0.1) {
+                    // 10% chance to drop health
+                    healthPickups.push(createHealthPickup(enemy.mesh.position.clone()));
+                } else if (dropRoll < 0.2) {
+                    // 10% chance to drop ammo
+                    bulletPickups.push(createBulletPickup(enemy.mesh.position.clone()));
+                }
+            }
+        }
+    }
+    
+    // Check if player is in explosion radius
+    const playerPosition = new THREE.Vector3();
+    camera.getWorldPosition(playerPosition);
+    const playerDistance = playerPosition.distanceTo(position);
+    
+    if (playerDistance <= explosionRadius) {
+        // Calculate damage based on distance (more damage closer to explosion)
+        const damageMultiplier = 1 - (playerDistance / explosionRadius);
+        const damage = Math.floor(explosionDamage * 0.5 * damageMultiplier); // Half damage to player
+        
+        // Apply damage to player
+        playerTakeDamage(damage, position);
+        
+        // Apply screen shake based on proximity
+        const shakeIntensity = 0.2 * (1 - (playerDistance / explosionRadius));
+        gameState.currentRecoil = {
+            x: (Math.random() - 0.5) * shakeIntensity,
+            y: (Math.random() - 0.5) * shakeIntensity
+        };
+    }
+    
+    // Animation function
+    const animateExplosion = () => {
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        // Scale explosion over time
+        const currentRadius = maxRadius * progress;
+        explosion.scale.set(currentRadius, currentRadius, currentRadius);
+        outer.scale.set(currentRadius * 1.2, currentRadius * 1.2, currentRadius * 1.2);
+        
+        // Fade out explosion
+        explosionMaterial.opacity = 0.8 * (1 - progress);
+        outerMaterial.opacity = 0.5 * (1 - progress);
+        
+        // Continue animation until complete
+        if (progress < 1) {
+            requestAnimationFrame(animateExplosion);
+        } else {
+            // Remove explosion from scene
+            scene.remove(explosionGroup);
+        }
+    };
+    
+    // Start animation
+    animateExplosion();
+}
+
+// Create a rocket launcher pickup
+function createRocketLauncherPickup(position) {
+    // Create a visual representation of the rocket launcher
+    const gunGroup = new THREE.Group();
+    
+    // Main tube
+    const tubeGeometry = new THREE.CylinderGeometry(0.08, 0.08, 0.7, 16);
+    const tubeMaterial = new THREE.MeshBasicMaterial({ color: 0x444444 });
+    const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
+    tube.rotation.z = Math.PI / 2; // Rotate to horizontal position
+    gunGroup.add(tube);
+    
+    // End cap with opening
+    const capGeometry = new THREE.CylinderGeometry(0.1, 0.1, 0.05, 16);
+    const capMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
+    const cap = new THREE.Mesh(capGeometry, capMaterial);
+    cap.rotation.z = Math.PI / 2;
+    cap.position.x = 0.35;
+    gunGroup.add(cap);
+    
+    // Handle
+    const handleGeometry = new THREE.BoxGeometry(0.15, 0.1, 0.04);
+    const handleMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
+    const handle = new THREE.Mesh(handleGeometry, handleMaterial);
+    handle.position.x = -0.2;
+    handle.position.y = -0.15;
+    gunGroup.add(handle);
+    
+    // Set position
+    gunGroup.position.copy(position);
+    
+    // Add floating animation
+    const floatAnimation = () => {
+        if (!pickup.isActive) return; // Stop animation if pickup is no longer active
+        
+        const time = performance.now() * 0.001; // Convert to seconds
+        gunGroup.position.y = position.y + Math.sin(time * 2) * 0.1; // Float up and down
+        gunGroup.rotation.y += 0.01; // Slowly rotate
+        
+        requestAnimationFrame(floatAnimation);
+    };
+    
+    // Create pickup object
+    const pickup = {
+        mesh: gunGroup,
+        type: 'rocketLauncher',
+        isActive: true,
+        timeCreated: performance.now()
+    };
+    
+    // Add to scene
+    scene.add(gunGroup);
+    
+    // Start animation
+    floatAnimation();
+    
+    return pickup;
+}
+
+// Function to switch to a specific weapon type
+function switchToWeapon(weaponType) {
+    // Check if we already have this weapon type equipped
+    if (gameState.currentGunType === weaponType) return;
+    
+    // Check if we're trying to switch to a weapon we don't have
+    // For simplicity, we'll assume the player always has a pistol
+    if (weaponType !== 'pistol') {
+        // For other weapons, we'll check if there are any pickups of that type
+        // If there are, we'll assume the player has found that weapon before
+        let hasWeapon = false;
+        
+        switch (weaponType) {
+            case 'machineGun':
+                hasWeapon = machineGunPickups.length > 0 || gameState.foundMachineGun;
+                break;
+            case 'sniperRifle':
+                hasWeapon = sniperRiflePickups.length > 0 || gameState.foundSniperRifle;
+                break;
+            case 'shotgun':
+                hasWeapon = shotgunPickups.length > 0 || gameState.foundShotgun;
+                break;
+            case 'rocketLauncher':
+                hasWeapon = rocketLauncherPickups.length > 0 || gameState.foundRocketLauncher;
+                break;
+        }
+        
+        if (!hasWeapon) {
+            showNotification("You don't have that weapon yet!");
+            return;
+        }
+    }
+    
+    // Store the current weapon type in game state
+    const previousWeapon = gameState.currentGunType;
+    gameState.currentGunType = weaponType;
+    
+    // Set ammo based on weapon type
+    switch (weaponType) {
+        case 'pistol':
+            gameState.maxAmmo = 10;
+            break;
+        case 'machineGun':
+            gameState.maxAmmo = 30;
+            gameState.foundMachineGun = true;
+            break;
+        case 'sniperRifle':
+            gameState.maxAmmo = 5;
+            gameState.foundSniperRifle = true;
+            break;
+        case 'shotgun':
+            gameState.maxAmmo = 8;
+            gameState.foundShotgun = true;
+            break;
+        case 'rocketLauncher':
+            gameState.maxAmmo = 5;
+            gameState.foundRocketLauncher = true;
+            break;
+    }
+    
+    // If we're out of ammo for this weapon, give some ammo
+    if (gameState.ammo <= 0) {
+        gameState.ammo = Math.min(gameState.maxAmmo, 5); // Give some ammo, but not full
+    }
+    
+    // Update weapon visibility
+    weapon.visible = weaponType === 'pistol';
+    machineGun.visible = weaponType === 'machineGun';
+    sniperRifle.visible = weaponType === 'sniperRifle';
+    shotgun.visible = weaponType === 'shotgun';
+    rocketLauncher.visible = weaponType === 'rocketLauncher';
+    
+    // Reset zoom if switching from sniper rifle
+    if (previousWeapon === 'sniperRifle' && gameState.isZoomed) {
+        toggleZoom();
+    }
+    
+    // Play weapon switch sound
+    playSound('reload');
+    
+    // Show notification
+    showNotification(`Switched to ${weaponType.replace(/([A-Z])/g, ' $1').toLowerCase()}`);
+    
+    // Update UI
+    updateUI();
 }
