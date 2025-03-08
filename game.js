@@ -20,7 +20,7 @@ let gameState = {
     soundEnabled: true,
     brokenWindows: [], // Track which windows are broken
     lastHitTime: 0, // Track when player was last hit
-    showingRoundMessage: false // Track if round message is showing
+    showingRoundMessage: false // Track if wave message is showing
 };
 
 // DOM elements
@@ -318,166 +318,96 @@ function createWeapon() {
     return weaponGroup;
 }
 
-// Create a central building with doorways and windows
-function createCentralBuilding() {
-    debugLog('Creating central building');
+// Remove the createCentralBuilding function and replace with createRandomBlocks
+function createRandomBlocks(count = 15) {
+    debugLog('Creating random blocks');
     
-    // Building dimensions
-    const width = 10;
-    const height = 4;
-    const depth = 10;
-    const wallThickness = 0.3;
+    const blockBounds = [];
     
-    // Create building group
-    const buildingGroup = new THREE.Group();
+    for (let i = 0; i < count; i++) {
+        // Generate random dimensions
+        const height = Math.random() * 4 + 1;
+        const width = Math.random() * 3 + 1;
+        const depth = Math.random() * 3 + 1;
+        
+        // Random cartoon-style colors
+        const colors = [0x333333, 0x666666, 0x999999, 0xDDDDDD, 0xAA3333, 0x3333AA, 0x33AA33];
+        const color = colors[Math.floor(Math.random() * colors.length)];
+        
+        const blockGeometry = new THREE.BoxGeometry(width, height, depth);
+        const blockMaterial = new THREE.MeshBasicMaterial({ color: color });
+        
+        const block = new THREE.Mesh(blockGeometry, blockMaterial);
+        
+        // Random position
+        let validPosition = false;
+        let position = new THREE.Vector3();
+        let attempts = 0;
+        
+        while (!validPosition && attempts < 50) {
+            attempts++;
+            position.x = Math.random() * 40 - 20;
+            position.z = Math.random() * 40 - 20;
+            
+            // Keep blocks away from the center spawn area
+            if (Math.abs(position.x) < 5 && Math.abs(position.z) < 5) {
+                continue;
+            }
+            
+            // Check if this position overlaps with existing blocks
+            let overlaps = false;
+            for (const bound of blockBounds) {
+                // Simple distance check for overlap
+                const distance = Math.sqrt(
+                    Math.pow(position.x - bound.x, 2) + 
+                    Math.pow(position.z - bound.z, 2)
+                );
+                
+                if (distance < (width/2 + bound.width/2 + 1)) {
+                    overlaps = true;
+                    break;
+                }
+            }
+            
+            if (!overlaps) {
+                validPosition = true;
+            }
+        }
+        
+        if (!validPosition) {
+            debugLog(`Could not find valid position for block ${i} after 50 attempts`);
+            continue;
+        }
+        
+        block.position.set(position.x, height/2, position.z);
+        
+        // Add to scene and collision objects
+        scene.add(block);
+        collisionObjects.push(block);
+        
+        // Store bounds for enemy spawn checking
+        blockBounds.push({
+            x: position.x,
+            z: position.z,
+            width: width,
+            depth: depth,
+            box: new THREE.Box3().setFromObject(block)
+        });
+        
+        debugLog(`Added block at ${position.x}, ${position.y}, ${position.z}`);
+    }
     
-    // Building material - classic cartoon style
-    const buildingMaterial = new THREE.MeshBasicMaterial({ color: 0xDDDDDD });
-    const outlineMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    // Store all block bounds for enemy spawn checking
+    gameState.allBuildingBounds = blockBounds.map(b => b.box);
     
-    // Create walls (4 separate walls instead of a box to allow for doorways and windows)
-    
-    // Front wall (with door)
-    const frontWallGroup = new THREE.Group();
-    
-    // Left section of front wall
-    const frontLeftGeometry = new THREE.BoxGeometry(width/2 - 1, height, wallThickness);
-    const frontLeft = new THREE.Mesh(frontLeftGeometry, buildingMaterial);
-    frontLeft.position.set(-width/4 - 0.5, height/2, depth/2);
-    frontWallGroup.add(frontLeft);
-    collisionObjects.push(frontLeft);
-    
-    // Right section of front wall
-    const frontRightGeometry = new THREE.BoxGeometry(width/2 - 1, height, wallThickness);
-    const frontRight = new THREE.Mesh(frontRightGeometry, buildingMaterial);
-    frontRight.position.set(width/4 + 0.5, height/2, depth/2);
-    frontWallGroup.add(frontRight);
-    collisionObjects.push(frontRight);
-    
-    // Top section of front wall (above door) - RAISED HIGHER
-    const frontTopGeometry = new THREE.BoxGeometry(2, height/4, wallThickness);
-    const frontTop = new THREE.Mesh(frontTopGeometry, buildingMaterial);
-    frontTop.position.set(0, height * 0.875, depth/2);
-    frontWallGroup.add(frontTop);
-    collisionObjects.push(frontTop);
-    
-    // Back wall (with window opening)
-    // Create back wall in sections to leave an opening for the window
-    
-    // Top section of back wall
-    const backTopGeometry = new THREE.BoxGeometry(width, height/2, wallThickness);
-    const backTop = new THREE.Mesh(backTopGeometry, buildingMaterial);
-    backTop.position.set(0, height * 0.75, -depth/2);
-    buildingGroup.add(backTop);
-    collisionObjects.push(backTop);
-    
-    // Bottom section of back wall
-    const backBottomGeometry = new THREE.BoxGeometry(width, height/2 - 0.75, wallThickness);
-    const backBottom = new THREE.Mesh(backBottomGeometry, buildingMaterial);
-    backBottom.position.set(0, (height/2 - 0.75)/2, -depth/2);
-    buildingGroup.add(backBottom);
-    collisionObjects.push(backBottom);
-    
-    // Left section of back wall
-    const backLeftGeometry = new THREE.BoxGeometry((width - 2)/2, 0.75, wallThickness);
-    const backLeft = new THREE.Mesh(backLeftGeometry, buildingMaterial);
-    backLeft.position.set(-(width - 2)/4, height/2, -depth/2);
-    buildingGroup.add(backLeft);
-    collisionObjects.push(backLeft);
-    
-    // Right section of back wall
-    const backRightGeometry = new THREE.BoxGeometry((width - 2)/2, 0.75, wallThickness);
-    const backRight = new THREE.Mesh(backRightGeometry, buildingMaterial);
-    backRight.position.set((width - 2)/4, height/2, -depth/2);
-    buildingGroup.add(backRight);
-    collisionObjects.push(backRight);
-    
-    // Left wall (with window opening)
-    // Create left wall in sections to leave an opening for the window
-    
-    // Top section of left wall
-    const leftTopGeometry = new THREE.BoxGeometry(wallThickness, height/2, depth);
-    const leftTop = new THREE.Mesh(leftTopGeometry, buildingMaterial);
-    leftTop.position.set(-width/2, height * 0.75, 0);
-    buildingGroup.add(leftTop);
-    collisionObjects.push(leftTop);
-    
-    // Bottom section of left wall
-    const leftBottomGeometry = new THREE.BoxGeometry(wallThickness, height/2 - 0.75, depth);
-    const leftBottom = new THREE.Mesh(leftBottomGeometry, buildingMaterial);
-    leftBottom.position.set(-width/2, (height/2 - 0.75)/2, 0);
-    buildingGroup.add(leftBottom);
-    collisionObjects.push(leftBottom);
-    
-    // Front section of left wall
-    const leftFrontGeometry = new THREE.BoxGeometry(wallThickness, 0.75, (depth - 2)/2);
-    const leftFront = new THREE.Mesh(leftFrontGeometry, buildingMaterial);
-    leftFront.position.set(-width/2, height/2, (depth - 2)/4);
-    buildingGroup.add(leftFront);
-    collisionObjects.push(leftFront);
-    
-    // Back section of left wall
-    const leftBackGeometry = new THREE.BoxGeometry(wallThickness, 0.75, (depth - 2)/2);
-    const leftBack = new THREE.Mesh(leftBackGeometry, buildingMaterial);
-    leftBack.position.set(-width/2, height/2, -(depth - 2)/4);
-    buildingGroup.add(leftBack);
-    collisionObjects.push(leftBack);
-    
-    // Right wall (with doorway)
-    const rightWallGroup = new THREE.Group();
-    
-    // Top section of right wall - RAISED HIGHER
-    const rightTopGeometry = new THREE.BoxGeometry(wallThickness, height/4, depth);
-    const rightTop = new THREE.Mesh(rightTopGeometry, buildingMaterial);
-    rightTop.position.set(width/2, height * 0.875, 0);
-    rightWallGroup.add(rightTop);
-    collisionObjects.push(rightTop);
-    
-    // Front section of right wall
-    const rightFrontGeometry = new THREE.BoxGeometry(wallThickness, height, depth/2 - 1);
-    const rightFront = new THREE.Mesh(rightFrontGeometry, buildingMaterial);
-    rightFront.position.set(width/2, height/2, depth/4 + 0.5);
-    rightWallGroup.add(rightFront);
-    collisionObjects.push(rightFront);
-    
-    // Back section of right wall
-    const rightBackGeometry = new THREE.BoxGeometry(wallThickness, height, depth/2 - 1);
-    const rightBack = new THREE.Mesh(rightBackGeometry, buildingMaterial);
-    rightBack.position.set(width/2, height/2, -depth/4 - 0.5);
-    rightWallGroup.add(rightBack);
-    collisionObjects.push(rightBack);
-    
-    // Roof
-    const roofGeometry = new THREE.BoxGeometry(width + 0.5, wallThickness, depth + 0.5);
-    const roof = new THREE.Mesh(roofGeometry, buildingMaterial);
-    roof.position.set(0, height, 0);
-    buildingGroup.add(roof);
-    collisionObjects.push(roof);
-    
-    // Add all wall groups to the building
-    buildingGroup.add(frontWallGroup);
-    buildingGroup.add(rightWallGroup);
-    
-    // Add building to scene
-    scene.add(buildingGroup);
-    
-    // Create an invisible box to check if enemies are inside the building
-    const buildingBounds = new THREE.Box3(
-        new THREE.Vector3(-width/2, 0, -depth/2),
-        new THREE.Vector3(width/2, height, depth/2)
-    );
-    
-    // Store the building bounds for enemy spawn checking
-    gameState.buildingBounds = buildingBounds;
-    
-    debugLog('Central building created');
+    return blockBounds;
 }
 
 function createEnvironment() {
     debugLog('Creating environment');
     // Floor
     const floorGeometry = new THREE.PlaneGeometry(50, 50, 10, 10);
-    const floorMaterial = new THREE.MeshBasicMaterial({ color: 0xcccccc, side: THREE.DoubleSide }); // Changed to BasicMaterial
+    const floorMaterial = new THREE.MeshBasicMaterial({ color: 0xcccccc, side: THREE.DoubleSide });
     const floor = new THREE.Mesh(floorGeometry, floorMaterial);
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = 0;
@@ -490,64 +420,27 @@ function createEnvironment() {
         scene.add(axesHelper);
     }
     
-    // Create central building with doorways and windows
-    createCentralBuilding();
+    // Create random blocks instead of a central building
+    const blockBounds = createRandomBlocks(15);
     
     // Store all building bounds for enemy spawn checking
-    const allBuildingBounds = [gameState.buildingBounds];
-    
-    // Add some cartoon-style obstacles and decorations
-    for (let i = 0; i < 10; i++) {
-        // Generate random buildings
-        const height = Math.random() * 3 + 1;
-        const width = Math.random() * 2 + 1;
-        const depth = Math.random() * 2 + 1;
-        
-        const buildingGeometry = new THREE.BoxGeometry(width, height, depth);
-        const buildingMaterial = new THREE.MeshBasicMaterial({ // Changed to BasicMaterial
-            color: Math.random() > 0.5 ? 0x333333 : 0x666666,
-        });
-        
-        const building = new THREE.Mesh(buildingGeometry, buildingMaterial);
-        building.position.x = Math.random() * 40 - 20;
-        building.position.z = Math.random() * 40 - 20;
-        
-        // Make sure random buildings don't overlap with central building
-        if (Math.abs(building.position.x) < 8 && Math.abs(building.position.z) < 8) {
-            building.position.x = building.position.x > 0 ? building.position.x + 8 : building.position.x - 8;
-            building.position.z = building.position.z > 0 ? building.position.z + 8 : building.position.z - 8;
-        }
-        
-        building.position.y = height / 2;
-        building.castShadow = true;
-        building.receiveShadow = true;
-        
-        // Add to collision objects
-        collisionObjects.push(building);
-        
-        // Create a bounding box for this building
-        const buildingBounds = new THREE.Box3();
-        buildingBounds.setFromObject(building);
-        allBuildingBounds.push(buildingBounds);
-        
-        scene.add(building);
-        debugLog(`Added building at ${building.position.x}, ${building.position.y}, ${building.position.z}`);
-    }
-    
-    // Store all building bounds for enemy spawn checking
-    gameState.allBuildingBounds = allBuildingBounds;
+    gameState.allBuildingBounds = blockBounds.map(b => b.box);
 }
 
 function spawnEnemies() {
     debugLog('Spawning enemies');
     
-    // Only show round notification if it exists
+    // Only show wave notification if it exists
     if (roundNotification) {
         showRoundNotification(gameState.level);
     }
     
+    // Calculate number of enemies based on wave level
+    // Start with 3 enemies on wave 1, then add 2 more for each wave
+    const enemyCount = 3 + ((gameState.level - 1) * 2);
+    
     // Create cartoon-style enemies inspired by old Mickey cartoons
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < enemyCount; i++) {
         const enemy = createEnemy();
         
         // Generate random position
@@ -588,13 +481,18 @@ function spawnEnemies() {
         
         enemy.position.copy(position);
         scene.add(enemy);
+        
+        // Make enemies slower than player (player speed is 5.0)
+        // Keep speed constant across all waves
+        const enemySpeed = 0.015 + (Math.random() * 0.005);
+        
         enemies.push({
             mesh: enemy,
             health: 100,
-            speed: 0.02,
+            speed: enemySpeed,
             bounceOffset: Math.random() * Math.PI * 2
         });
-        debugLog(`Added enemy at ${enemy.position.x}, ${enemy.position.y}, ${enemy.position.z}`);
+        debugLog(`Added enemy at ${enemy.position.x}, ${enemy.position.y}, ${enemy.position.z} with speed ${enemySpeed}`);
     }
 }
 
@@ -692,10 +590,29 @@ function shoot() {
                     // Play enemy death sound
                     playSound('enemyDeath');
                     
+                    // Store enemy position before removing it
+                    const enemyPosition = enemies[i].mesh.position.clone();
+                    
+                    // Remove enemy from scene
                     scene.remove(enemies[i].mesh);
                     enemies.splice(i, 1);
                     gameState.score += 100;
-                    updateUI(); // Update UI to show new score
+                    updateUI();
+                    
+                    // Random drop chance
+                    const dropRoll = Math.random();
+                    if (dropRoll < 0.3) {
+                        // 30% chance to drop health
+                        bulletPickups.push(createHealthPickup(enemyPosition));
+                        debugLog('Enemy dropped health');
+                    } else if (dropRoll < 0.6) {
+                        // 30% chance to drop bullets
+                        bulletPickups.push(createBulletDropPickup(enemyPosition));
+                        debugLog('Enemy dropped bullets');
+                    } else {
+                        // 40% chance to drop nothing
+                        debugLog('Enemy dropped nothing');
+                    }
                     
                     // Check if all enemies are defeated
                     if (enemies.length === 0) {
@@ -860,14 +777,25 @@ function animate() {
             const pickup = bulletPickups[i];
             const distance = playerPosition.distanceTo(pickup.mesh.position);
             
-            if (distance < 1.5) { // Pickup range
-                gameState.bullets += pickup.bullets;
+            // Remove pickups that have been around for more than 20 seconds
+            if (time - pickup.timeCreated > 20000) {
                 scene.remove(pickup.mesh);
                 bulletPickups.splice(i, 1);
+                continue;
+            }
+            
+            if (distance < 1.5) { // Pickup range
+                // Handle different pickup types
+                if (pickup.type === 'bullets') {
+                    gameState.bullets += pickup.bullets;
+                    playSound('pickupBullets');
+                } else if (pickup.type === 'health') {
+                    gameState.health = Math.min(100, gameState.health + pickup.health);
+                    playSound('pickupBullets'); // Reuse bullet pickup sound for now
+                }
                 
-                // Play pickup sound
-                playSound('pickupBullets');
-                
+                scene.remove(pickup.mesh);
+                bulletPickups.splice(i, 1);
                 updateUI();
             }
         }
@@ -1019,7 +947,9 @@ function createBulletPickup() {
     
     return {
         mesh: bullet,
-        bullets: 10 // Each pickup gives 10 bullets
+        type: 'bullets',
+        bullets: 10, // Each pickup gives 10 bullets
+        timeCreated: performance.now()
     };
 }
 
@@ -1399,12 +1329,12 @@ function createScoreDisplay() {
 let roundNotification;
 let scoreDisplay;
 
-// Show round notification
+// Show wave notification
 function showRoundNotification(round) {
     if (!roundNotification || gameState.showingRoundMessage) return;
     
     gameState.showingRoundMessage = true;
-    roundNotification.textContent = `ROUND ${round}`;
+    roundNotification.textContent = `WAVE ${round}`;
     roundNotification.style.opacity = '1';
     
     // Hide after 3 seconds
@@ -1441,3 +1371,45 @@ function init() {
 
 // Initialize the game
 init();
+
+// Create a health pickup
+function createHealthPickup(position) {
+    const healthGeometry = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+    const healthMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const health = new THREE.Mesh(healthGeometry, healthMaterial);
+    
+    // Position at the enemy's location
+    health.position.copy(position);
+    health.position.y = 0.5; // Slightly above ground
+    
+    // Add to scene
+    scene.add(health);
+    
+    return {
+        mesh: health,
+        type: 'health',
+        health: 25, // Each pickup gives 25 health
+        timeCreated: performance.now()
+    };
+}
+
+// Create a bullet pickup from enemy drop
+function createBulletDropPickup(position) {
+    const bulletGeometry = new THREE.BoxGeometry(0.2, 0.2, 0.5);
+    const bulletMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+    const bullet = new THREE.Mesh(bulletGeometry, bulletMaterial);
+    
+    // Position at the enemy's location
+    bullet.position.copy(position);
+    bullet.position.y = 0.5; // Slightly above ground
+    
+    // Add to scene
+    scene.add(bullet);
+    
+    return {
+        mesh: bullet,
+        type: 'bullets',
+        bullets: 5, // Each enemy drop gives 5 bullets
+        timeCreated: performance.now()
+    };
+}
