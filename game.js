@@ -123,7 +123,8 @@ const soundEffects = {
     sniperShoot: new THREE.Audio(audioListener), // New sound for sniper rifle
     explosion: new THREE.Audio(audioListener), // New sound for explosions
     shotgunBlast: new THREE.Audio(audioListener), // New sound for shotgun
-    rocketLaunch: new THREE.Audio(audioListener) // New sound for rocket launcher
+    rocketLaunch: new THREE.Audio(audioListener), // New sound for rocket launcher
+    teleport: new THREE.Audio(audioListener) // New sound for teleportation
 };
 
 // Audio loader
@@ -180,13 +181,22 @@ function loadSoundEffects() {
         soundEffects.rocketLaunch.setBuffer(buffer);
         soundEffects.rocketLaunch.setVolume(0.5);
     });
+    
+    // Teleport sound effect
+    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1145/1145-preview.mp3', function(buffer) {
+        soundEffects.teleport.setBuffer(buffer);
+        soundEffects.teleport.setVolume(0.5);
+    });
 }
 
 // Play sound effect if enabled
-function playSound(sound) {
-    if (gameState.soundEnabled && soundEffects[sound].buffer) {
+function playSound(sound, volume) {
+    if (gameState.soundEnabled && soundEffects[sound] && soundEffects[sound].buffer) {
         if (soundEffects[sound].isPlaying) {
             soundEffects[sound].stop();
+        }
+        if (volume !== undefined) {
+            soundEffects[sound].setVolume(volume);
         }
         soundEffects[sound].play();
     }
@@ -663,10 +673,14 @@ function spawnEnemies() {
     // Start with 0 flyers in waves 1-2, then 1 in wave 3, and increase by 2 each wave
     const flyingCount = gameState.level > 2 ? 1 + (gameState.level - 3) * 2 : 0;
     
-    // Calculate regular enemy count (total minus special types)
-    const regularEnemyCount = enemyCount - spiderCount - flyingCount;
+    // Calculate number of ninja enemies (only appear after wave 3)
+    // Start with 0 ninjas in waves 1-3, then 1 in wave 4, and increase by 2 each wave
+    const ninjaCount = gameState.level > 3 ? 1 + (gameState.level - 4) * 2 : 0;
     
-    debugLog(`Spawning ${regularEnemyCount} regular enemies, ${spiderCount} spider enemies, and ${flyingCount} flying enemies`);
+    // Calculate regular enemy count (total minus special types)
+    const regularEnemyCount = enemyCount - spiderCount - flyingCount - ninjaCount;
+    
+    debugLog(`Spawning ${regularEnemyCount} regular enemies, ${spiderCount} spider enemies, ${flyingCount} flying enemies, and ${ninjaCount} ninja enemies`);
     
     // Spawn regular enemies
     for (let i = 0; i < regularEnemyCount; i++) {
@@ -681,6 +695,11 @@ function spawnEnemies() {
     // Spawn flying enemies (after wave 2)
     for (let i = 0; i < flyingCount; i++) {
         spawnEnemy('flying');
+    }
+    
+    // Spawn ninja enemies (after wave 3)
+    for (let i = 0; i < ninjaCount; i++) {
+        spawnEnemy('ninja');
     }
 }
 
@@ -2007,6 +2026,9 @@ function spawnEnemy(type) {
         case 'flying':
             enemy = createFlyingEnemy();
             break;
+        case 'ninja':
+            enemy = createNinjaEnemy();
+            break;
         default:
             enemy = createEnemy();
             break;
@@ -2069,8 +2091,14 @@ function spawnEnemy(type) {
             bounceAmount = 0.1; // Less bounce for smoother ghost movement
             flyHeight = 2.5 + Math.random(); // Flying enemies stay in the air but lower
             break;
+        case 'ninja':
+            baseSpeed = 0.04; // Ninjas are the fastest
+            health = 80; // Ninjas have medium health
+            bounceAmount = 0.05; // Ninjas bounce very little
+            flyHeight = 0; // Ninjas don't fly
+            break;
         default: // Regular enemies
-            baseSpeed = 0.02;
+            baseSpeed = 0.022;
             health = 100;
             bounceAmount = 0.1;
             flyHeight = 0;
@@ -2361,6 +2389,129 @@ function animate() {
             
             // Store original position for collision detection
             const originalEnemyPosition = enemy.mesh.position.clone();
+            
+            // Special handling for ninja enemies - teleportation
+            if (enemy.type === 'ninja') {
+                const currentTime = performance.now();
+                const timeSinceLastTeleport = currentTime - enemy.mesh.userData.lastTeleportTime;
+                
+                // Check if it's time to prepare for teleportation
+                if (!enemy.mesh.userData.teleportReady && 
+                    timeSinceLastTeleport > enemy.mesh.userData.teleportCooldown) {
+                    
+                    // Start teleport effect - make particles visible
+                    enemy.mesh.userData.teleportReady = true;
+                    enemy.mesh.userData.particles.forEach(particle => {
+                        particle.material.opacity = 0.8;
+                    });
+                    
+                    // Schedule actual teleport in 1 second
+                    setTimeout(() => {
+                        if (!enemy.mesh.parent) return; // Enemy might be dead
+                        
+                        // Find a new position to teleport to
+                        const playerPos = new THREE.Vector3();
+                        camera.getWorldPosition(playerPos);
+                        
+                        // Random angle and distance from player (between 3-8 units away)
+                        const angle = Math.random() * Math.PI * 2;
+                        const distance = 3 + Math.random() * 5;
+                        
+                        // Calculate new position
+                        const newX = playerPos.x + Math.sin(angle) * distance;
+                        const newZ = playerPos.z + Math.cos(angle) * distance;
+                        
+                        // Create teleport effect at old position
+                        createTeleportEffect(enemy.mesh.position.clone());
+                        
+                        // Teleport
+                        enemy.mesh.position.set(newX, enemy.mesh.position.y, newZ);
+                        
+                        // Create teleport effect at new position
+                        createTeleportEffect(enemy.mesh.position.clone());
+                        
+                        // Reset teleport state
+                        enemy.mesh.userData.teleportReady = false;
+                        enemy.mesh.userData.lastTeleportTime = currentTime;
+                        enemy.mesh.userData.teleportCooldown = 3000 + Math.random() * 2000; // 3-5 seconds
+                        
+                        // Hide particles
+                        enemy.mesh.userData.particles.forEach(particle => {
+                            particle.material.opacity = 0;
+                        });
+                        
+                        // Update last position to prevent stuck detection
+                        enemy.lastPosition.copy(enemy.mesh.position);
+                        enemy.stuckTime = 0;
+                    }, 1000);
+                }
+                
+                // Animate particles if teleport is preparing
+                if (enemy.mesh.userData.teleportReady) {
+                    enemy.mesh.userData.particles.forEach(particle => {
+                        // Orbit around the ninja
+                        const time = performance.now() * 0.003;
+                        const radius = 0.5;
+                        particle.position.x = Math.sin(time + particle.position.y * 5) * radius;
+                        particle.position.z = Math.cos(time + particle.position.y * 5) * radius;
+                    });
+                }
+                
+                // Handle katana slashing animation
+                const timeSinceLastSlash = currentTime - enemy.mesh.userData.lastSlashTime;
+                
+                // Check if ninja is close enough to player to slash
+                const distanceToPlayer = enemy.mesh.position.distanceTo(camera.position);
+                
+                // If not currently slashing, check if it's time to slash
+                if (!enemy.mesh.userData.isSlashing) {
+                    // Slash when close to player and cooldown has passed
+                    if (distanceToPlayer < 3 && timeSinceLastSlash > enemy.mesh.userData.slashCooldown) {
+                        // Start slash animation
+                        enemy.mesh.userData.isSlashing = true;
+                        enemy.mesh.userData.slashStartTime = currentTime;
+                        
+                        // Play slash sound
+                        playSound('teleport', 0.3); // Reuse teleport sound for now
+                        
+                        // Create slash effect
+                        createSlashEffect(enemy.mesh.position.clone(), directionToPlayer);
+                        
+                        // Deal damage to player if very close
+                        if (distanceToPlayer < 2) {
+                            playerTakeDamage(10, enemy.mesh.position);
+                        }
+                    }
+                } else {
+                    // Currently slashing, animate the katana
+                    const slashProgress = (currentTime - enemy.mesh.userData.slashStartTime) / enemy.mesh.userData.slashDuration;
+                    
+                    if (slashProgress >= 1) {
+                        // Slash animation complete
+                        enemy.mesh.userData.isSlashing = false;
+                        enemy.mesh.userData.lastSlashTime = currentTime;
+                        
+                        // Reset katana to base rotation
+                        if (enemy.mesh.userData.katana) {
+                            enemy.mesh.userData.katana.rotation.copy(enemy.mesh.userData.katanaBaseRotation);
+                        }
+                    } else {
+                        // Animate the slash
+                        if (enemy.mesh.userData.katana) {
+                            // Swing the katana in an arc
+                            const swingAngle = Math.PI * 1.5 * Math.sin(slashProgress * Math.PI);
+                            enemy.mesh.userData.katana.rotation.z = enemy.mesh.userData.katanaBaseRotation.z + swingAngle;
+                            
+                            // Also rotate slightly on other axes for a more dynamic slash
+                            enemy.mesh.userData.katana.rotation.x = Math.sin(slashProgress * Math.PI * 2) * 0.5;
+                            enemy.mesh.userData.katana.rotation.y = Math.cos(slashProgress * Math.PI) * 0.3;
+                        }
+                    }
+                }
+                
+                // Always face the player
+                enemy.mesh.lookAt(camera.position);
+            }
             
             // Check if enemy is stuck by comparing current position to last position
             const movementAmount = enemy.mesh.position.distanceTo(enemy.lastPosition);
@@ -3675,88 +3826,79 @@ function createRocketLauncherPickup(position) {
 
 // Create a teleport effect at the given position
 function createTeleportEffect(position) {
-    // Create a group for the teleport effect
-    const teleportGroup = new THREE.Group();
-    teleportGroup.position.copy(position);
-    
-    // Create a ring effect
-    const ringGeometry = new THREE.RingGeometry(0.5, 0.7, 32);
-    const ringMaterial = new THREE.MeshBasicMaterial({ 
-        color: 0x00ffff, 
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.8
-    });
-    const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-    ring.rotation.x = Math.PI / 2; // Lay flat
-    teleportGroup.add(ring);
-    
-    // Create particles
+    // Create particles for the teleport effect
     const particleCount = 20;
-    const particles = [];
+    const particles = new THREE.Group();
     
     for (let i = 0; i < particleCount; i++) {
-        const particleGeometry = new THREE.SphereGeometry(0.05, 8, 8);
-        const particleMaterial = new THREE.MeshBasicMaterial({ 
-            color: 0x00ffff,
+        const geometry = new THREE.SphereGeometry(0.05, 8, 8);
+        const material = new THREE.MeshBasicMaterial({
+            color: 0x9900ff,
             transparent: true,
-            opacity: 0.7
+            opacity: 0.8
         });
-        const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+        
+        const particle = new THREE.Mesh(geometry, material);
         
         // Random position within a sphere
-        const angle = Math.random() * Math.PI * 2;
-        const radius = 0.2 + Math.random() * 0.5;
+        const radius = 0.5;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.random() * Math.PI;
+        
         particle.position.set(
-            Math.cos(angle) * radius,
-            (Math.random() - 0.5) * 1.5,
-            Math.sin(angle) * radius
+            position.x + radius * Math.sin(phi) * Math.cos(theta),
+            position.y + radius * Math.sin(phi) * Math.sin(theta),
+            position.z + radius * Math.cos(phi)
         );
         
-        teleportGroup.add(particle);
-        particles.push(particle);
+        // Random velocity
+        particle.userData.velocity = new THREE.Vector3(
+            (Math.random() - 0.5) * 0.1,
+            (Math.random() - 0.5) * 0.1,
+            (Math.random() - 0.5) * 0.1
+        );
+        
+        particles.add(particle);
     }
     
-    // Add to scene
-    scene.add(teleportGroup);
+    scene.add(particles);
     
-    // Play a teleport sound
-    playSound('pickupHealth'); // Reuse existing sound for now
+    // Play teleport sound
+    playSound('teleport', 0.5);
     
-    // Animate the teleport effect
+    // Animate and remove after 1 second
     const startTime = performance.now();
-    const duration = 1000; // 1 second duration
+    const duration = 1000;
     
-    const animateTeleport = () => {
+    function animateParticles() {
         const elapsed = performance.now() - startTime;
-        const progress = Math.min(elapsed / duration, 1);
+        const progress = elapsed / duration;
         
-        // Scale the ring
-        ring.scale.set(1 + progress * 2, 1 + progress * 2, 1);
-        
-        // Fade out the ring
-        ringMaterial.opacity = 0.8 * (1 - progress);
-        
-        // Animate particles
-        particles.forEach(particle => {
-            // Move particles outward
-            particle.position.multiplyScalar(1 + 0.05 * progress);
-            
-            // Fade out particles
-            particle.material.opacity = 0.7 * (1 - progress);
-        });
-        
-        // Continue animation until complete
-        if (progress < 1) {
-            requestAnimationFrame(animateTeleport);
-        } else {
-            // Remove teleport effect from scene
-            scene.remove(teleportGroup);
+        if (progress >= 1) {
+            // Remove particles
+            scene.remove(particles);
+            return;
         }
-    };
+        
+        // Update particles
+        for (let i = 0; i < particles.children.length; i++) {
+            const particle = particles.children[i];
+            
+            // Move particle
+            particle.position.add(particle.userData.velocity);
+            
+            // Fade out
+            particle.material.opacity = 0.8 * (1 - progress);
+            
+            // Scale down
+            const scale = 1 - progress * 0.5;
+            particle.scale.set(scale, scale, scale);
+        }
+        
+        requestAnimationFrame(animateParticles);
+    }
     
-    // Start animation
-    animateTeleport();
+    animateParticles();
 }
 
 // Helper function to handle enemy defeat
@@ -3871,4 +4013,231 @@ function updateMenuStats() {
     updateElement('menu-health', gameState.health);
     updateElement('menu-score', gameState.score);
     updateElement('menu-level', gameState.level);
+}
+
+// Create a ninja enemy (fast and teleporting)
+function createNinjaEnemy() {
+    // Create the ninja body
+    const bodyGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+    const bodyMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x222222, // Dark color for ninja
+        shininess: 30,
+        specular: 0x333333
+    });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    
+    // Create ninja head
+    const headGeometry = new THREE.SphereGeometry(0.3, 16, 16);
+    const headMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x222222,
+        shininess: 30,
+        specular: 0x333333
+    });
+    const head = new THREE.Mesh(headGeometry, headMaterial);
+    head.position.set(0, 0.5, 0);
+    body.add(head);
+    
+    // Create ninja mask
+    const maskGeometry = new THREE.BoxGeometry(0.35, 0.1, 0.35);
+    const maskMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x990000, // Red mask
+        shininess: 30
+    });
+    const mask = new THREE.Mesh(maskGeometry, maskMaterial);
+    mask.position.set(0, 0.05, 0.15);
+    head.add(mask);
+    
+    // Create ninja eyes
+    const eyeGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+    const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    
+    const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    leftEye.position.set(-0.1, 0.1, 0.25);
+    head.add(leftEye);
+    
+    const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    rightEye.position.set(0.1, 0.1, 0.25);
+    head.add(rightEye);
+    
+    // Create ninja limbs
+    const limbGeometry = new THREE.CylinderGeometry(0.1, 0.1, 0.6, 8);
+    const limbMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x222222,
+        shininess: 30,
+        specular: 0x333333
+    });
+    
+    // Arms
+    const leftArm = new THREE.Mesh(limbGeometry, limbMaterial);
+    leftArm.position.set(-0.6, 0, 0);
+    leftArm.rotation.z = Math.PI / 2;
+    body.add(leftArm);
+    
+    const rightArm = new THREE.Mesh(limbGeometry, limbMaterial);
+    rightArm.position.set(0.6, 0, 0);
+    rightArm.rotation.z = -Math.PI / 2;
+    body.add(rightArm);
+    
+    // Create katana
+    const katanaGroup = new THREE.Group();
+    
+    // Katana handle
+    const handleGeometry = new THREE.CylinderGeometry(0.03, 0.03, 0.3, 8);
+    const handleMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x8B4513, // Brown handle
+        shininess: 30
+    });
+    const handle = new THREE.Mesh(handleGeometry, handleMaterial);
+    katanaGroup.add(handle);
+    
+    // Katana blade
+    const bladeGeometry = new THREE.BoxGeometry(0.03, 0.8, 0.05);
+    const bladeMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0xCCCCCC, // Silver blade
+        shininess: 100,
+        specular: 0xFFFFFF
+    });
+    const blade = new THREE.Mesh(bladeGeometry, bladeMaterial);
+    blade.position.set(0, 0.55, 0);
+    katanaGroup.add(blade);
+    
+    // Katana guard (tsuba)
+    const guardGeometry = new THREE.CylinderGeometry(0.08, 0.08, 0.02, 8);
+    const guardMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x111111, // Dark guard
+        shininess: 30
+    });
+    const guard = new THREE.Mesh(guardGeometry, guardMaterial);
+    guard.position.set(0, 0.15, 0);
+    katanaGroup.add(guard);
+    
+    // Position katana in right hand
+    katanaGroup.position.set(0.7, 0, 0.2);
+    katanaGroup.rotation.set(0, 0, -Math.PI / 2);
+    body.add(katanaGroup);
+    
+    // Store katana reference for animation
+    body.userData.katana = katanaGroup;
+    body.userData.katanaBaseRotation = katanaGroup.rotation.clone();
+    body.userData.isSlashing = false;
+    body.userData.slashStartTime = 0;
+    body.userData.slashDuration = 500; // 0.5 seconds for slash animation
+    
+    // Legs
+    const leftLeg = new THREE.Mesh(limbGeometry, limbMaterial);
+    leftLeg.position.set(-0.2, -0.6, 0);
+    body.add(leftLeg);
+    
+    const rightLeg = new THREE.Mesh(limbGeometry, limbMaterial);
+    rightLeg.position.set(0.2, -0.6, 0);
+    body.add(rightLeg);
+    
+    // Create teleportation particles (initially invisible)
+    const particles = [];
+    for (let i = 0; i < 8; i++) {
+        const particleGeometry = new THREE.SphereGeometry(0.08, 8, 8);
+        const particleMaterial = new THREE.MeshBasicMaterial({
+            color: 0x9900ff,
+            transparent: true,
+            opacity: 0
+        });
+        
+        const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+        
+        // Position around the ninja
+        const angle = (i / 8) * Math.PI * 2;
+        const radius = 0.5;
+        particle.position.set(
+            Math.sin(angle) * radius,
+            0.2 + (i % 2) * 0.4, // Alternate heights
+            Math.cos(angle) * radius
+        );
+        
+        body.add(particle);
+        particles.push(particle);
+    }
+    
+    // Store particles in userData for animation
+    body.userData.particles = particles;
+    
+    // Initialize teleportation properties
+    body.userData.teleportReady = false;
+    body.userData.lastTeleportTime = performance.now();
+    body.userData.teleportCooldown = 5000 + Math.random() * 2000; // 5-7 seconds initially
+    
+    // Initialize slash attack properties
+    body.userData.lastSlashTime = performance.now();
+    body.userData.slashCooldown = 2000 + Math.random() * 1000; // 2-3 seconds between slashes
+    
+    return body;
+}
+
+// Create a visual slash effect
+function createSlashEffect(position, direction) {
+    // Create a group for the slash effect
+    const slashGroup = new THREE.Group();
+    slashGroup.position.copy(position);
+    
+    // Make the slash face the direction
+    slashGroup.lookAt(position.clone().add(direction));
+    
+    // Create the slash trail
+    const slashGeometry = new THREE.PlaneGeometry(1.5, 0.3);
+    const slashMaterial = new THREE.MeshBasicMaterial({
+        color: 0xFFFFFF,
+        transparent: true,
+        opacity: 0.7,
+        side: THREE.DoubleSide
+    });
+    
+    const slash = new THREE.Mesh(slashGeometry, slashMaterial);
+    slash.position.set(0, 0, 0.5); // Position slightly in front
+    slashGroup.add(slash);
+    
+    // Add a glow effect
+    const glowGeometry = new THREE.PlaneGeometry(1.8, 0.5);
+    const glowMaterial = new THREE.MeshBasicMaterial({
+        color: 0x9900FF, // Purple glow
+        transparent: true,
+        opacity: 0.5,
+        side: THREE.DoubleSide
+    });
+    
+    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+    glow.position.set(0, 0, 0.45); // Slightly behind the slash
+    slashGroup.add(glow);
+    
+    // Add to scene
+    scene.add(slashGroup);
+    
+    // Animate the slash effect
+    const startTime = performance.now();
+    const duration = 300; // 0.3 seconds
+    
+    function animateSlash() {
+        const elapsed = performance.now() - startTime;
+        const progress = elapsed / duration;
+        
+        if (progress >= 1) {
+            // Remove slash effect
+            scene.remove(slashGroup);
+            return;
+        }
+        
+        // Fade out
+        slashMaterial.opacity = 0.7 * (1 - progress);
+        glowMaterial.opacity = 0.5 * (1 - progress);
+        
+        // Stretch and move the slash as it progresses
+        const stretchFactor = 1 + progress * 0.5;
+        slash.scale.set(stretchFactor, 1, 1);
+        glow.scale.set(stretchFactor, 1 + progress * 0.5, 1);
+        
+        // Rotate slightly for a more dynamic effect
+        slashGroup.rotation.z += 0.05;
+        
+        requestAnimationFrame(animateSlash);
+    }
+    
+    animateSlash();
 }
