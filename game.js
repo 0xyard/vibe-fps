@@ -1740,55 +1740,15 @@ function updateBulletProjectiles(delta) {
                 
                 // Check if enemy is defeated
                 if (enemy.health <= 0) {
-                    // Play enemy death sound
-                    playSound('enemyDeath');
-                    
-                    // Store enemy position before removing it
+                    // Store enemy position
                     const enemyPosition = enemy.mesh.position.clone();
                     
-                    // Remove enemy from scene
-                    scene.remove(enemy.mesh);
+                    // Remove from array (must be done before handleEnemyDefeat)
                     enemies.splice(j, 1);
-                    gameState.score += 100;
-                    updateUI();
+                    j--; // Adjust index after removal
                     
-                    // Random drop chance
-                    const dropRoll = Math.random();
-                    if (dropRoll < 0.05) {
-                        // 5% chance to drop health
-                        healthPickups.push(createHealthPickup(enemyPosition));
-                        debugLog('Enemy dropped health');
-                    } else if (dropRoll < 0.1) {
-                        // 5% chance to drop machine gun
-                        machineGunPickups.push(createMachineGunPickup(enemyPosition));
-                        debugLog('Enemy dropped machine gun');
-                    } else if (dropRoll < 0.15) {
-                        // 5% chance to drop sniper rifle (rare)
-                        sniperRiflePickups.push(createSniperRiflePickup(enemyPosition));
-                        debugLog('Enemy dropped sniper rifle');
-                    } else if (dropRoll < 0.2) {
-                        // 5% chance to drop shotgun
-                        shotgunPickups.push(createShotgunPickup(enemyPosition));
-                        debugLog('Enemy dropped shotgun');
-                    } else if (dropRoll < 0.25) {
-                        // 5% chance to drop rocket launcher (very rare)
-                        rocketLauncherPickups.push(createRocketLauncherPickup(enemyPosition));
-                        debugLog('Enemy dropped rocket launcher');
-                    } else {
-                        // 75% chance to drop nothing
-                        debugLog('Enemy dropped nothing');
-                    }
-                    
-                    // Check if all enemies are defeated
-                    if (enemies.length === 0) {
-                        gameState.level++;
-                        gameState.ammo += 5;
-                        
-                        // Delay spawning new enemies to give player a moment to breathe
-                        setTimeout(() => {
-                            spawnEnemies();
-                        }, 2000);
-                    }
+                    // Handle enemy defeat
+                    handleEnemyDefeat(enemy, enemyPosition);
                 }
                 
                 // Remove bullet after hitting enemy
@@ -2399,6 +2359,74 @@ function animate() {
             const movementAmount = enemy.mesh.position.distanceTo(enemy.lastPosition);
             if (movementAmount < 0.01) {
                 enemy.stuckTime += delta;
+                
+                // If enemy has been stuck for too long (5 seconds), teleport it to a new position
+                if (enemy.stuckTime > 5) {
+                    debugLog('Enemy stuck for too long, teleporting to new position');
+                    
+                    // Find a new position around the player
+                    const playerPosition = new THREE.Vector3();
+                    camera.getWorldPosition(playerPosition);
+                    
+                    // Try to find a valid position outside buildings
+                    let validPosition = false;
+                    let newPosition = new THREE.Vector3();
+                    let attempts = 0;
+                    
+                    while (!validPosition && attempts < 20) {
+                        attempts++;
+                        
+                        // Random angle and distance from player (between 10-15 units away)
+                        const randomAngle = Math.random() * Math.PI * 2;
+                        const randomDistance = 10 + Math.random() * 5;
+                        
+                        // Calculate new position
+                        newPosition.x = playerPosition.x + Math.sin(randomAngle) * randomDistance;
+                        newPosition.y = enemy.mesh.position.y; // Keep same height
+                        newPosition.z = playerPosition.z + Math.cos(randomAngle) * randomDistance;
+                        
+                        // Check if position is inside any building
+                        let insideAnyBuilding = false;
+                        
+                        if (gameState.allBuildingBounds) {
+                            for (const bounds of gameState.allBuildingBounds) {
+                                if (bounds.containsPoint(newPosition)) {
+                                    // Position is inside a building, try again
+                                    insideAnyBuilding = true;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (!insideAnyBuilding) {
+                            // Position is valid
+                            validPosition = true;
+                        }
+                    }
+                    
+                    if (!validPosition) {
+                        debugLog('Could not find valid teleport position, using fallback');
+                        // Fallback: just move the enemy closer to the player but not too close
+                        newPosition.copy(playerPosition);
+                        const directionFromPlayer = new THREE.Vector3().subVectors(enemy.mesh.position, playerPosition).normalize();
+                        newPosition.add(directionFromPlayer.multiplyScalar(8)); // 8 units away from player
+                    }
+                    
+                    // Set new position
+                    enemy.mesh.position.copy(newPosition);
+                    
+                    // Reset stuck time and pathfinding
+                    enemy.stuckTime = 0;
+                    enemy.pathfindingOffset = new THREE.Vector3(0, 0, 0);
+                    enemy.lastPathChange = time;
+                    enemy.lastPosition.copy(enemy.mesh.position);
+                    
+                    // Add a teleport effect
+                    createTeleportEffect(enemy.mesh.position.clone());
+                    
+                    // Skip the rest of the movement logic for this frame
+                    continue;
+                }
             } else {
                 enemy.stuckTime = 0;
                 // Only update last position if we've moved significantly
@@ -2423,16 +2451,55 @@ function animate() {
             const intersections = raycaster.intersectObjects(collisionObjects);
             const pathBlocked = intersections.length > 0;
             
+            // Early obstacle detection - check if we're getting too close to an obstacle
+            let approachingObstacle = false;
+            let obstacleDirection = null;
+            
+            // Check in multiple directions around the enemy for nearby obstacles
+            for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 8) {
+                const checkDirection = new THREE.Vector3(
+                    Math.sin(angle),
+                    0,
+                    Math.cos(angle)
+                );
+                
+                // Create a raycaster to check for nearby obstacles
+                const proximityRaycaster = new THREE.Raycaster(
+                    enemy.mesh.position.clone(),
+                    checkDirection,
+                    0,
+                    1.5 // Check 1.5 units ahead in all directions
+                );
+                
+                // Check for intersections with obstacles
+                const proximityIntersections = proximityRaycaster.intersectObjects(collisionObjects);
+                
+                if (proximityIntersections.length > 0) {
+                    // Found a nearby obstacle
+                    approachingObstacle = true;
+                    
+                    // Store the direction to the obstacle
+                    obstacleDirection = checkDirection;
+                    
+                    // If we're very close to an obstacle, increase stuck time to trigger pathfinding
+                    if (proximityIntersections[0].distance < 0.8) {
+                        enemy.stuckTime += delta * 0.5; // Increase stuck time but not as much as when fully stuck
+                    }
+                    
+                    break;
+                }
+            }
+            
             // Determine if we need to change path
-            const needsNewPath = (pathBlocked || enemy.stuckTime > 0.5) && 
+            const needsNewPath = (pathBlocked || approachingObstacle || enemy.stuckTime > 0.5) && 
                                 (time - enemy.lastPathChange > 1000);
             
             if (needsNewPath) {
                 // Try to find a better path around obstacles
                 const possibleDirections = [];
                 
-                // Try 8 different directions around the circle
-                for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
+                // Try 16 different directions around the circle (more directions for better pathfinding)
+                for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 8) {
                     const testDirection = new THREE.Vector3(
                         Math.sin(angle),
                         0,
@@ -2444,7 +2511,7 @@ function animate() {
                         enemy.mesh.position.clone(),
                         testDirection,
                         0,
-                        2 // Check 2 units ahead
+                        3 // Check 3 units ahead (increased from 2)
                     );
                     
                     // Check if this direction is clear
@@ -2452,10 +2519,18 @@ function animate() {
                     
                     if (testIntersections.length === 0) {
                         // This direction is clear, score it based on how close it is to the player direction
-                        const dotProduct = testDirection.dot(directionToPlayer);
+                        // and how far it is from any obstacle direction
+                        let score = testDirection.dot(directionToPlayer);
+                        
+                        // If we're approaching an obstacle, reduce the score of directions toward the obstacle
+                        if (approachingObstacle && obstacleDirection) {
+                            const obstacleAvoidance = 1 - Math.max(0, testDirection.dot(obstacleDirection));
+                            score += obstacleAvoidance * 0.5; // Weight obstacle avoidance
+                        }
+                        
                         possibleDirections.push({
                             direction: testDirection,
-                            score: dotProduct // Higher score means closer to player direction
+                            score: score
                         });
                     }
                 }
@@ -2467,6 +2542,12 @@ function animate() {
                     // Choose the best direction (closest to player that's not blocked)
                     enemy.pathfindingOffset = possibleDirections[0].direction.clone();
                     enemy.pathfindingOffset.sub(directionToPlayer);
+                    
+                    // Make the offset stronger if we're approaching an obstacle
+                    if (approachingObstacle) {
+                        enemy.pathfindingOffset.multiplyScalar(1.5);
+                    }
+                    
                     enemy.lastPathChange = time;
                     debugLog('Enemy found new path around obstacle');
                 } else {
@@ -2480,6 +2561,7 @@ function animate() {
                     
                     enemy.pathfindingOffset = randomDirection.clone();
                     enemy.pathfindingOffset.sub(directionToPlayer);
+                    enemy.pathfindingOffset.multiplyScalar(2); // Stronger offset for desperate situations
                     enemy.lastPathChange = time;
                     debugLog('Enemy trying random direction - all paths blocked');
                 }
@@ -2497,12 +2579,65 @@ function animate() {
             
             // Move enemy towards player with pathfinding
             const newPosition = enemy.mesh.position.clone();
-            newPosition.x += finalDirection.x * enemy.speed;
-            newPosition.z += finalDirection.z * enemy.speed;
+            
+            // Adjust speed based on proximity to obstacles
+            let adjustedSpeed = enemy.speed;
+            
+            // If we're approaching an obstacle, slow down to give more time to change direction
+            if (approachingObstacle) {
+                adjustedSpeed *= 0.7; // Reduce speed to 70% when near obstacles
+            }
+            
+            // Apply movement with adjusted speed
+            newPosition.x += finalDirection.x * adjustedSpeed;
+            newPosition.z += finalDirection.z * adjustedSpeed;
             
             // Check for collisions with buildings
             let enemyCollision = false;
             const enemyRadius = 0.5; // Enemy collision radius
+            
+            // Before moving, check if the new position would cause a collision
+            const preCheckPosition = enemy.mesh.position.clone();
+            
+            // Create a raycaster to check the path to the new position
+            const moveDirection = new THREE.Vector3()
+                .subVectors(newPosition, enemy.mesh.position)
+                .normalize();
+            
+            const moveDistance = enemy.mesh.position.distanceTo(newPosition);
+            
+            const moveRaycaster = new THREE.Raycaster(
+                enemy.mesh.position.clone(),
+                moveDirection,
+                0,
+                moveDistance + 0.1 // Check slightly beyond the move distance
+            );
+            
+            // Check for intersections with obstacles
+            const moveIntersections = moveRaycaster.intersectObjects(collisionObjects);
+            
+            if (moveIntersections.length > 0) {
+                // There's an obstacle in the way, try to slide along it
+                const hitPoint = moveIntersections[0].point;
+                const hitNormal = moveIntersections[0].face.normal;
+                
+                // Calculate a slide direction along the obstacle surface
+                const slideDirection = new THREE.Vector3()
+                    .copy(moveDirection)
+                    .sub(hitNormal.multiplyScalar(moveDirection.dot(hitNormal)))
+                    .normalize();
+                
+                // Try to move in the slide direction instead
+                newPosition.copy(enemy.mesh.position);
+                newPosition.x += slideDirection.x * adjustedSpeed * 0.5; // Move slower when sliding
+                newPosition.z += slideDirection.z * adjustedSpeed * 0.5;
+                
+                // Increase pathfinding offset in the slide direction
+                enemy.pathfindingOffset.add(slideDirection.multiplyScalar(0.2));
+                
+                // Mark that we're approaching an obstacle
+                approachingObstacle = true;
+            }
             
             // Temporarily update position to check collision
             enemy.mesh.position.copy(newPosition);
@@ -2527,6 +2662,17 @@ function animate() {
                 
                 // Increase stuck time when collision occurs
                 enemy.stuckTime += delta * 2; // Double the stuck time on collision
+                
+                // Immediately try to find a new path
+                enemy.lastPathChange = time - 1500; // Make it eligible for path change soon
+                
+                // Add a small random offset to help break out of stuck situations
+                const randomOffset = new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.2,
+                    0,
+                    (Math.random() - 0.5) * 0.2
+                );
+                enemy.pathfindingOffset.add(randomOffset);
             }
             
             // Special handling for flying enemies
@@ -3328,25 +3474,15 @@ function createExplosion(position) {
             
             // Check if enemy is defeated
             if (enemy.health <= 0) {
-                // Remove enemy
-                scene.remove(enemy.mesh);
+                // Store enemy position
+                const enemyPosition = enemy.mesh.position.clone();
                 
-                // Update score
-                gameState.score += 100;
-                
-                // Remove from array
+                // Remove from array (must be done before handleEnemyDefeat)
                 enemies.splice(i, 1);
                 i--; // Adjust index after removal
                 
-                // Random drop chance
-                const dropRoll = Math.random();
-                if (dropRoll < 0.1) {
-                    // 10% chance to drop health
-                    healthPickups.push(createHealthPickup(enemy.mesh.position.clone()));
-                } else if (dropRoll < 0.2) {
-                    // 10% chance to drop ammo
-                    bulletPickups.push(createBulletPickup(enemy.mesh.position.clone()));
-                }
+                // Handle enemy defeat
+                handleEnemyDefeat(enemy, enemyPosition);
             }
         }
     }
@@ -3466,89 +3602,142 @@ function createRocketLauncherPickup(position) {
     return pickup;
 }
 
-// Function to switch to a specific weapon type
-function switchToWeapon(weaponType) {
-    // Check if we already have this weapon type equipped
-    if (gameState.currentGunType === weaponType) return;
+// Create a teleport effect at the given position
+function createTeleportEffect(position) {
+    // Create a group for the teleport effect
+    const teleportGroup = new THREE.Group();
+    teleportGroup.position.copy(position);
     
-    // Check if we're trying to switch to a weapon we don't have
-    // For simplicity, we'll assume the player always has a pistol
-    if (weaponType !== 'pistol') {
-        // For other weapons, we'll check if there are any pickups of that type
-        // If there are, we'll assume the player has found that weapon before
-        let hasWeapon = false;
+    // Create a ring effect
+    const ringGeometry = new THREE.RingGeometry(0.5, 0.7, 32);
+    const ringMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0x00ffff, 
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.8
+    });
+    const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+    ring.rotation.x = Math.PI / 2; // Lay flat
+    teleportGroup.add(ring);
+    
+    // Create particles
+    const particleCount = 20;
+    const particles = [];
+    
+    for (let i = 0; i < particleCount; i++) {
+        const particleGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+        const particleMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0x00ffff,
+            transparent: true,
+            opacity: 0.7
+        });
+        const particle = new THREE.Mesh(particleGeometry, particleMaterial);
         
-        switch (weaponType) {
-            case 'machineGun':
-                hasWeapon = machineGunPickups.length > 0 || gameState.foundMachineGun;
-                break;
-            case 'sniperRifle':
-                hasWeapon = sniperRiflePickups.length > 0 || gameState.foundSniperRifle;
-                break;
-            case 'shotgun':
-                hasWeapon = shotgunPickups.length > 0 || gameState.foundShotgun;
-                break;
-            case 'rocketLauncher':
-                hasWeapon = rocketLauncherPickups.length > 0 || gameState.foundRocketLauncher;
-                break;
-        }
+        // Random position within a sphere
+        const angle = Math.random() * Math.PI * 2;
+        const radius = 0.2 + Math.random() * 0.5;
+        particle.position.set(
+            Math.cos(angle) * radius,
+            (Math.random() - 0.5) * 1.5,
+            Math.sin(angle) * radius
+        );
         
-        if (!hasWeapon) {
-            showNotification("You don't have that weapon yet!");
-            return;
+        teleportGroup.add(particle);
+        particles.push(particle);
+    }
+    
+    // Add to scene
+    scene.add(teleportGroup);
+    
+    // Play a teleport sound
+    playSound('pickupHealth'); // Reuse existing sound for now
+    
+    // Animate the teleport effect
+    const startTime = performance.now();
+    const duration = 1000; // 1 second duration
+    
+    const animateTeleport = () => {
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        // Scale the ring
+        ring.scale.set(1 + progress * 2, 1 + progress * 2, 1);
+        
+        // Fade out the ring
+        ringMaterial.opacity = 0.8 * (1 - progress);
+        
+        // Animate particles
+        particles.forEach(particle => {
+            // Move particles outward
+            particle.position.multiplyScalar(1 + 0.05 * progress);
+            
+            // Fade out particles
+            particle.material.opacity = 0.7 * (1 - progress);
+        });
+        
+        // Continue animation until complete
+        if (progress < 1) {
+            requestAnimationFrame(animateTeleport);
+        } else {
+            // Remove teleport effect from scene
+            scene.remove(teleportGroup);
         }
-    }
+    };
     
-    // Store the current weapon type in game state
-    const previousWeapon = gameState.currentGunType;
-    gameState.currentGunType = weaponType;
+    // Start animation
+    animateTeleport();
+}
+
+// Helper function to handle enemy defeat
+function handleEnemyDefeat(enemy, position) {
+    // Play enemy death sound
+    playSound('enemyDeath');
     
-    // Set ammo based on weapon type
-    switch (weaponType) {
-        case 'pistol':
-            gameState.maxAmmo = 10;
-            break;
-        case 'machineGun':
-            gameState.maxAmmo = 30;
-            gameState.foundMachineGun = true;
-            break;
-        case 'sniperRifle':
-            gameState.maxAmmo = 5;
-            gameState.foundSniperRifle = true;
-            break;
-        case 'shotgun':
-            gameState.maxAmmo = 8;
-            gameState.foundShotgun = true;
-            break;
-        case 'rocketLauncher':
-            gameState.maxAmmo = 5;
-            gameState.foundRocketLauncher = true;
-            break;
-    }
+    // Remove enemy from scene
+    scene.remove(enemy.mesh);
     
-    // If we're out of ammo for this weapon, give some ammo
-    if (gameState.ammo <= 0) {
-        gameState.ammo = Math.min(gameState.maxAmmo, 5); // Give some ammo, but not full
-    }
-    
-    // Update weapon visibility
-    weapon.visible = weaponType === 'pistol';
-    machineGun.visible = weaponType === 'machineGun';
-    sniperRifle.visible = weaponType === 'sniperRifle';
-    shotgun.visible = weaponType === 'shotgun';
-    rocketLauncher.visible = weaponType === 'rocketLauncher';
-    
-    // Reset zoom if switching from sniper rifle
-    if (previousWeapon === 'sniperRifle' && gameState.isZoomed) {
-        toggleZoom();
-    }
-    
-    // Play weapon switch sound
-    playSound('reload');
-    
-    // Show notification
-    showNotification(`Switched to ${weaponType.replace(/([A-Z])/g, ' $1').toLowerCase()}`);
-    
-    // Update UI
+    // Update score
+    gameState.score += 100;
     updateUI();
+    
+    // Random drop chance
+    const dropRoll = Math.random();
+    if (dropRoll < 0.05) {
+        // 5% chance to drop health
+        healthPickups.push(createHealthPickup(position.clone()));
+        debugLog('Enemy dropped health');
+    } else if (dropRoll < 0.1) {
+        // 5% chance to drop machine gun
+        machineGunPickups.push(createMachineGunPickup(position.clone()));
+        debugLog('Enemy dropped machine gun');
+    } else if (dropRoll < 0.15) {
+        // 5% chance to drop sniper rifle (rare)
+        sniperRiflePickups.push(createSniperRiflePickup(position.clone()));
+        debugLog('Enemy dropped sniper rifle');
+    } else if (dropRoll < 0.2) {
+        // 5% chance to drop shotgun
+        shotgunPickups.push(createShotgunPickup(position.clone()));
+        debugLog('Enemy dropped shotgun');
+    } else if (dropRoll < 0.25) {
+        // 5% chance to drop rocket launcher (very rare)
+        rocketLauncherPickups.push(createRocketLauncherPickup(position.clone()));
+        debugLog('Enemy dropped rocket launcher');
+    } else {
+        // 75% chance to drop nothing
+        debugLog('Enemy dropped nothing');
+    }
+    
+    // Check if all enemies are defeated
+    if (enemies.length === 0) {
+        gameState.level++;
+        gameState.ammo += 5;
+        
+        // Show notification for new wave
+        showRoundNotification(gameState.level);
+        
+        // Delay spawning new enemies to give player a moment to breathe
+        setTimeout(() => {
+            spawnEnemies();
+        }, 2000);
+    }
 }
