@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
 // Debug flag - turn this on to help troubleshoot
-const DEBUG = true;
+const DEBUG = false;
 
 // Array to store objects that should have collision detection
 const collisionObjects = [];
@@ -645,6 +645,48 @@ function createRandomBlocks(count = 15) {
     return blockBounds;
 }
 
+// Function to visualize building bounds in debug mode
+function visualizeBuildingBounds() {
+    if (!DEBUG || !gameState.allBuildingBounds) return;
+    
+    debugLog('Visualizing building bounds');
+    
+    // Create a group to hold all the visualizers
+    const boundsGroup = new THREE.Group();
+    scene.add(boundsGroup);
+    
+    // Create a helper for each building bound
+    gameState.allBuildingBounds.forEach((bounds, index) => {
+        const helper = new THREE.Box3Helper(bounds, 0x00ff00);
+        boundsGroup.add(helper);
+        
+        // Add a label with the index
+        const center = new THREE.Vector3();
+        bounds.getCenter(center);
+        
+        // Create a sprite for the text
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = 64;
+        canvas.height = 64;
+        context.fillStyle = 'white';
+        context.font = '48px Arial';
+        context.fillText(index.toString(), 20, 44);
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+        const sprite = new THREE.Sprite(spriteMaterial);
+        sprite.position.copy(center);
+        sprite.position.y += 2; // Position above the box
+        sprite.scale.set(2, 2, 1);
+        
+        boundsGroup.add(sprite);
+    });
+    
+    // Store the group for later removal if needed
+    gameState.boundVisualizerGroup = boundsGroup;
+}
+
 function createEnvironment() {
     debugLog('Creating environment');
     
@@ -680,6 +722,11 @@ function createEnvironment() {
     
     // Store all building bounds for enemy spawn checking
     gameState.allBuildingBounds = blockBounds.map(b => b.box);
+    
+    // Visualize building bounds in debug mode
+    if (DEBUG) {
+        visualizeBuildingBounds();
+    }
 }
 
 // Create boundary walls around the map
@@ -2167,14 +2214,45 @@ function spawnEnemy(type) {
         // Check if position is inside any building
         let insideAnyBuilding = false;
         
+        // Create a proper point for collision detection
+        // We need to check at the enemy's center, not just at ground level
+        const checkPoint = new THREE.Vector3(position.x, position.y, position.z);
+        
         if (gameState.allBuildingBounds) {
             for (const bounds of gameState.allBuildingBounds) {
-                if (bounds.containsPoint(position)) {
+                if (bounds.containsPoint(checkPoint)) {
                     // Position is inside a building, try again
                     insideAnyBuilding = true;
                     break;
                 }
             }
+        }
+        
+        // Also check if the enemy would be too close to a building
+        // This prevents enemies from partially clipping into buildings
+        if (!insideAnyBuilding && gameState.allBuildingBounds) {
+            // Get enemy radius (approximate based on type)
+            let enemyRadius = 0.5; // Default radius
+            if (type === 'cyclops') enemyRadius = 1.0; // Cyclops is larger
+            
+            for (const bounds of gameState.allBuildingBounds) {
+                // Calculate distance to the closest point on the box
+                const closestPoint = new THREE.Vector3();
+                bounds.clampPoint(checkPoint, closestPoint);
+                const distance = checkPoint.distanceTo(closestPoint);
+                
+                if (distance < enemyRadius) {
+                    // Too close to a building, try again
+                    insideAnyBuilding = true;
+                    break;
+                }
+            }
+        }
+        
+        // Also check if the enemy would be too close to the player's starting position
+        const distanceToCenter = Math.sqrt(position.x * position.x + position.z * position.z);
+        if (distanceToCenter < 10) { // Keep enemies at least 10 units away from center
+            insideAnyBuilding = true;
         }
         
         if (!insideAnyBuilding) {
@@ -2190,6 +2268,23 @@ function spawnEnemy(type) {
     
     enemy.position.copy(position);
     scene.add(enemy);
+    
+    debugLog(`Successfully spawned ${type} enemy at position (${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`);
+    
+    // Add a visual helper in debug mode to show spawn points
+    if (DEBUG) {
+        const spawnMarker = new THREE.Mesh(
+            new THREE.SphereGeometry(0.2, 8, 8),
+            new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true })
+        );
+        spawnMarker.position.copy(position);
+        scene.add(spawnMarker);
+        
+        // Remove the marker after 5 seconds
+        setTimeout(() => {
+            scene.remove(spawnMarker);
+        }, 5000);
+    }
     
     // Set enemy properties based on type
     let baseSpeed, health, bounceAmount, flyHeight;
