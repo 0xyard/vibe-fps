@@ -17,18 +17,22 @@ const sniperRiflePickups = [];
 const healthPickups = [];
 const shotgunPickups = [];
 const rocketLauncherPickups = []; // Add rocket launcher pickups array
+const fireballs = []; // Array to store active fireballs
 
 // Game state
 const gameState = {
     health: 100,
-    ammo: 10,
-    maxAmmo: 10,
+    maxHealth: 100,
+    ammo: 30,
+    maxAmmo: 30,
     score: 0,
     level: 1,
-    gameOver: false,
+    currentGunType: 'pistol',
     isReloading: false,
     isMouseDown: false,
-    currentGunType: 'pistol',
+    gameOver: false,
+    menuOpen: false,
+    showingRoundMessage: false,
     currentRecoil: { x: 0, y: 0 },
     recoilActive: false,
     recoilRecovery: 0,
@@ -41,8 +45,8 @@ const gameState = {
     foundSniperRifle: false,
     foundShotgun: false,
     foundRocketLauncher: false,
-    menuOpen: false, // Track if the menu is open
-    soundEnabled: true // Track if sound is enabled
+    soundEnabled: true, // Track if sound is enabled
+    allBuildingBounds: []
 };
 
 // DOM elements
@@ -173,7 +177,11 @@ const soundEffects = {
     rocketLaunch: new THREE.Audio(audioListener),
     teleport: new THREE.Audio(audioListener),
     thud: new THREE.Audio(audioListener),
-    waveStart: new THREE.Audio(audioListener)
+    ghostDeath: new THREE.Audio(audioListener),
+    ninjaDeath: new THREE.Audio(audioListener),
+    cyclopsDeath: new THREE.Audio(audioListener),
+    waveStart: new THREE.Audio(audioListener),
+    fireball: new THREE.Audio(audioListener)
 };
 
 // Audio loader
@@ -214,31 +222,31 @@ function loadSoundEffects() {
     });
     
     // Sniper rifle sound effect
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1144/1144-preview.mp3', function(buffer) {
+    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1670/1670-preview.mp3', function(buffer) {
         soundEffects.sniperShoot.setBuffer(buffer);
         soundEffects.sniperShoot.setVolume(0.5);
     });
     
     // Shotgun blast sound effect
-    audioLoader.load('https://cdn.freesound.org/previews/573/573269_4056087-lq.mp3', function(buffer) {
+    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1678/1678-preview.mp3', function(buffer) {
         soundEffects.shotgunBlast.setBuffer(buffer);
         soundEffects.shotgunBlast.setVolume(0.6);
     });
     
     // Rocket launch sound effect
-    audioLoader.load('https://cdn.freesound.org/previews/574/574269_4056087-lq.mp3', function(buffer) {
+    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1184/1184-preview.mp3', function(buffer) {
         soundEffects.rocketLaunch.setBuffer(buffer);
         soundEffects.rocketLaunch.setVolume(0.5);
     });
     
     // Teleport sound effect
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1145/1145-preview.mp3', function(buffer) {
+    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1489/1489-preview.mp3', function(buffer) {
         soundEffects.teleport.setBuffer(buffer);
         soundEffects.teleport.setVolume(0.5);
     });
     
     // Club swing sound effect
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1146/1146-preview.mp3', function(buffer) {
+    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/3046/3046-preview.mp3', function(buffer) {
         soundEffects.thud.setBuffer(buffer);
         soundEffects.thud.setVolume(0.5);
     });
@@ -247,6 +255,12 @@ function loadSoundEffects() {
     audioLoader.load('https://assets.mixkit.co/active_storage/sfx/2780/2780-preview.mp3', function(buffer) {
         soundEffects.waveStart.setBuffer(buffer);
         soundEffects.waveStart.setVolume(0.7);
+    });
+    
+    // Fireball sound effect
+    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/2656/2656-preview.mp3', function(buffer) {
+        soundEffects.fireball.setBuffer(buffer);
+        soundEffects.fireball.setVolume(0.5);
     });
 }
 
@@ -814,10 +828,14 @@ function spawnEnemies() {
     // Start with 0 cyclops in waves 1-4, then 1 in wave 5, and increase by 1 each wave
     const cyclopsCount = gameState.level > 4 ? 1 + (gameState.level - 5) : 0;
     
-    // Calculate regular enemy count (total minus special types)
-    const regularEnemyCount = enemyCount - spiderCount - flyingCount - ninjaCount - cyclopsCount;
+    // Calculate number of fireball enemies (only appear after wave 2)
+    // Start with 0 fireball enemies in waves 1-5, then 2 in wave 6, and increase by 3 each wave
+    const fireballCount = gameState.level > 5 ? 2 + (gameState.level - 6) * 3 : 0;
     
-    debugLog(`Spawning ${regularEnemyCount} regular enemies, ${spiderCount} spider enemies, ${flyingCount} flying enemies, ${ninjaCount} ninja enemies, and ${cyclopsCount} cyclops enemies`);
+    // Calculate regular enemy count (total minus special types)
+    const regularEnemyCount = enemyCount - spiderCount - flyingCount - ninjaCount - cyclopsCount - fireballCount;
+    
+    debugLog(`Spawning ${regularEnemyCount} regular enemies, ${spiderCount} spider enemies, ${flyingCount} flying enemies, ${ninjaCount} ninja enemies, ${cyclopsCount} cyclops enemies, and ${fireballCount} fireball enemies`);
     
     // Spawn regular enemies
     for (let i = 0; i < regularEnemyCount; i++) {
@@ -842,6 +860,11 @@ function spawnEnemies() {
     // Spawn cyclops enemies (after wave 4)
     for (let i = 0; i < cyclopsCount; i++) {
         spawnEnemy('cyclops');
+    }
+    
+    // Spawn fireball enemies (after wave 2)
+    for (let i = 0; i < fireballCount; i++) {
+        spawnEnemy('fireball');
     }
 }
 
@@ -1450,6 +1473,12 @@ function restartGame() {
         scene.remove(bullet.mesh);
     }
     bulletProjectiles.length = 0;
+    
+    // Reset fireballs
+    for (const fireball of fireballs) {
+        scene.remove(fireball.mesh);
+    }
+    fireballs.length = 0;
     
     // Remove all health pickups
     for (const pickup of healthPickups) {
@@ -2202,6 +2231,9 @@ function spawnEnemy(type) {
         case 'cyclops':
             enemy = createCyclopsEnemy();
             break;
+        case 'fireball':
+            enemy = createFireballEnemy();
+            break;
         default:
             enemy = createEnemy();
             break;
@@ -2323,6 +2355,12 @@ function spawnEnemy(type) {
             health = 200; // Cyclops have high health
             bounceAmount = 0.03; // Cyclops barely bounce
             flyHeight = 0; // Cyclops don't fly
+            break;
+        case 'fireball':
+            baseSpeed = 0.02; // Fireball enemies are medium speed
+            health = 90; // Fireball enemies have medium-high health
+            bounceAmount = 0.08; // Moderate bounce
+            flyHeight = 1.5; // Hover slightly above ground
             break;
         default: // Regular enemies
             baseSpeed = 0.022;
@@ -2514,6 +2552,63 @@ function animate() {
         
         // Update bullet projectiles
         updateBulletProjectiles(delta);
+        
+        // Update fireballs
+        for (let i = fireballs.length - 1; i >= 0; i--) {
+            const fireball = fireballs[i];
+            
+            // Check if fireball has expired
+            const currentTime = performance.now();
+            if (currentTime - fireball.creationTime > fireball.lifetime) {
+                scene.remove(fireball.mesh);
+                fireballs.splice(i, 1);
+                continue;
+            }
+            
+            // Move fireball
+            fireball.mesh.position.add(
+                fireball.direction.clone().multiplyScalar(fireball.speed)
+            );
+            
+            // Check for collisions with player
+            const playerPosition = new THREE.Vector3();
+            camera.getWorldPosition(playerPosition);
+            const distanceToPlayer = fireball.mesh.position.distanceTo(playerPosition);
+            
+            if (distanceToPlayer < 1) {
+                // Hit player
+                playerTakeDamage(fireball.damage, fireball.mesh.position);
+                
+                // Create explosion effect
+                createFireballExplosion(fireball.mesh.position);
+                
+                // Remove fireball
+                scene.remove(fireball.mesh);
+                fireballs.splice(i, 1);
+                continue;
+            }
+            
+            // Check for collisions with environment
+            const rayDirection = fireball.direction.clone();
+            const raycaster = new THREE.Raycaster(
+                fireball.mesh.position.clone(),
+                rayDirection,
+                0,
+                fireball.speed * 2
+            );
+            
+            const intersects = raycaster.intersectObjects(collisionObjects);
+            
+            if (intersects.length > 0) {
+                // Hit environment
+                createFireballExplosion(fireball.mesh.position);
+                
+                // Remove fireball
+                scene.remove(fireball.mesh);
+                fireballs.splice(i, 1);
+                continue;
+            }
+        }
         
         // Check if player is holding mouse button and needs to auto-reload
         if (gameState.isMouseDown && gameState.ammo <= 0 && !gameState.isReloading) {
@@ -2802,6 +2897,121 @@ function animate() {
                             enemy.mesh.rotation.y = Math.sin(swingProgress * Math.PI) * 0.5;
                         }
                     }
+                }
+                
+                // Always face the player
+                enemy.mesh.lookAt(camera.position);
+            }
+            
+            // Special handling for fireball enemies
+            if (enemy.type === 'fireball') {
+                const currentTime = performance.now();
+                
+                // Animate fire particles
+                if (enemy.mesh.userData.particles) {
+                    enemy.mesh.userData.particles.forEach(particle => {
+                        const time = currentTime * 0.001;
+                        
+                        // Oscillate particles
+                        particle.mesh.position.x = particle.basePosition.x + Math.sin(time * 5 + particle.phase) * 0.1;
+                        particle.mesh.position.y = particle.basePosition.y + Math.cos(time * 5 + particle.phase) * 0.1;
+                        particle.mesh.position.z = particle.basePosition.z + Math.sin(time * 5 + particle.phase + Math.PI/2) * 0.1;
+                    });
+                }
+                
+                // Get distance to player
+                const distanceToPlayer = enemy.mesh.position.distanceTo(camera.position);
+                
+                // Check if enemy has line of sight to player
+                const raycaster = new THREE.Raycaster(
+                    enemy.mesh.position.clone(),
+                    directionToPlayer,
+                    0,
+                    distanceToPlayer
+                );
+                
+                const intersects = raycaster.intersectObjects(collisionObjects);
+                const hasLineOfSight = intersects.length === 0;
+                
+                // Store line of sight status
+                enemy.mesh.userData.hasLineOfSight = hasLineOfSight;
+                
+                // If enemy has line of sight and cooldown has passed, shoot fireball
+                const timeSinceLastFireball = currentTime - enemy.mesh.userData.lastFireballTime;
+                
+                if (hasLineOfSight && timeSinceLastFireball > enemy.mesh.userData.fireballCooldown && distanceToPlayer < 20) {
+                    // Start charging fireball
+                    if (!enemy.mesh.userData.isCharging) {
+                        enemy.mesh.userData.isCharging = true;
+                        enemy.mesh.userData.chargeStartTime = currentTime;
+                        
+                        // Make mouth glow brighter during charging
+                        const mouth = enemy.mesh.children.find(child => 
+                            child.position.z > 0.4 && child.position.y < 0);
+                        
+                        if (mouth) {
+                            mouth.material.emissiveIntensity = 1.0;
+                            mouth.scale.set(1.5, 1.5, 1.5);
+                        }
+                    } else {
+                        // Check if charging is complete
+                        const chargeTime = currentTime - enemy.mesh.userData.chargeStartTime;
+                        
+                        if (chargeTime >= enemy.mesh.userData.chargeDuration) {
+                            // Reset charging state
+                            enemy.mesh.userData.isCharging = false;
+                            enemy.mesh.userData.lastFireballTime = currentTime;
+                            
+                            // Reset mouth appearance
+                            const mouth = enemy.mesh.children.find(child => 
+                                child.position.z > 0.4 && child.position.y < 0);
+                            
+                            if (mouth) {
+                                mouth.material.emissiveIntensity = 0.5;
+                                mouth.scale.set(1, 1, 1);
+                            }
+                            
+                            // Create fireball
+                            const fireballPosition = enemy.mesh.position.clone();
+                            fireballPosition.y += 0.1; // Adjust height
+                            fireballPosition.add(directionToPlayer.clone().multiplyScalar(0.7)); // Start in front of mouth
+                            
+                            createFireball(fireballPosition, directionToPlayer);
+                        } else {
+                            // Animate charging
+                            const chargeProgress = chargeTime / enemy.mesh.userData.chargeDuration;
+                            
+                            // Pulse mouth during charging
+                            const mouth = enemy.mesh.children.find(child => 
+                                child.position.z > 0.4 && child.position.y < 0);
+                            
+                            if (mouth) {
+                                const pulseScale = 1.5 + Math.sin(chargeProgress * Math.PI * 10) * 0.3;
+                                mouth.scale.set(pulseScale, pulseScale, pulseScale);
+                            }
+                        }
+                    }
+                }
+                
+                // Movement behavior - maintain distance from player if has line of sight
+                if (hasLineOfSight) {
+                    // If too close to player, move away
+                    if (distanceToPlayer < enemy.mesh.userData.preferredDistance) {
+                        // Move away from player
+                        const moveDirection = directionToPlayer.clone().negate();
+                        enemy.mesh.position.add(moveDirection.multiplyScalar(enemy.speed));
+                    } else if (distanceToPlayer > enemy.mesh.userData.preferredDistance + 5) {
+                        // If too far, move closer
+                        enemy.mesh.position.add(directionToPlayer.clone().multiplyScalar(enemy.speed * 0.5));
+                    } else {
+                        // At good distance, strafe sideways
+                        const strafeDirection = new THREE.Vector3(-directionToPlayer.z, 0, directionToPlayer.x);
+                        const strafeAmount = Math.sin(currentTime * 0.001) * enemy.speed * 0.5;
+                        enemy.mesh.position.add(strafeDirection.multiplyScalar(strafeAmount));
+                    }
+                } else {
+                    // No line of sight, try to get closer to player
+                    enemy.mesh.position.add(directionToPlayer.clone().multiplyScalar(enemy.speed * 0.7));
                 }
                 
                 // Always face the player
@@ -5013,4 +5223,406 @@ function createClubSwingEffect(position, direction) {
     playSound('thud', 0.5);
     
     return swingGroup;
+}
+
+// Create a fireball-shooting enemy
+function createFireballEnemy() {
+    // Create a group for the enemy
+    const enemyGroup = new THREE.Group();
+    
+    // Body - fiery red/orange sphere
+    const bodyGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+    const bodyMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0xff4500, // Orange-red
+        emissive: 0xff2000,
+        emissiveIntensity: 0.3,
+        roughness: 0.7,
+        metalness: 0.3
+    });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    body.castShadow = true;
+    body.receiveShadow = true;
+    enemyGroup.add(body);
+    
+    // Eyes - glowing yellow
+    const eyeGeometry = new THREE.SphereGeometry(0.08, 8, 8);
+    const eyeMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0xffff00,
+        emissive: 0xffff00,
+        emissiveIntensity: 0.8,
+        roughness: 0.3,
+        metalness: 0.8
+    });
+    
+    const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    leftEye.position.set(-0.2, 0.15, 0.4);
+    enemyGroup.add(leftEye);
+    
+    const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    rightEye.position.set(0.2, 0.15, 0.4);
+    enemyGroup.add(rightEye);
+    
+    // Mouth - for shooting fireballs
+    const mouthGeometry = new THREE.SphereGeometry(0.15, 16, 8);
+    // Cut the sphere in half to make a mouth shape
+    for (let i = 0; i < mouthGeometry.attributes.position.count; i++) {
+        const y = mouthGeometry.attributes.position.getY(i);
+        if (y < 0) {
+            mouthGeometry.attributes.position.setY(i, y * 0.5);
+        }
+    }
+    mouthGeometry.computeVertexNormals();
+    
+    const mouthMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0xff0000,
+        emissive: 0xff0000,
+        emissiveIntensity: 0.5,
+        roughness: 0.2,
+        metalness: 0.8
+    });
+    const mouth = new THREE.Mesh(mouthGeometry, mouthMaterial);
+    mouth.position.set(0, -0.1, 0.45);
+    mouth.rotation.x = Math.PI / 2;
+    enemyGroup.add(mouth);
+    
+    // Add fire particles around the body
+    const particleCount = 8;
+    const particles = [];
+    
+    for (let i = 0; i < particleCount; i++) {
+        const particleGeometry = new THREE.SphereGeometry(0.1 + Math.random() * 0.1, 8, 8);
+        const particleMaterial = new THREE.MeshStandardMaterial({
+            color: 0xff7700,
+            emissive: 0xff5500,
+            emissiveIntensity: 0.5,
+            transparent: true,
+            opacity: 0.7
+        });
+        
+        const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+        
+        // Position particles around the body
+        const angle = (i / particleCount) * Math.PI * 2;
+        const radius = 0.6;
+        particle.position.set(
+            Math.sin(angle) * radius,
+            0.1 + Math.random() * 0.3,
+            Math.cos(angle) * radius
+        );
+        
+        particles.push({
+            mesh: particle,
+            basePosition: particle.position.clone(),
+            phase: Math.random() * Math.PI * 2,
+            speed: 0.02 + Math.random() * 0.02
+        });
+        
+        enemyGroup.add(particle);
+    }
+    
+    // Store particles and other animation properties in userData
+    enemyGroup.userData = {
+        particles: particles,
+        lastFireballTime: 0,
+        fireballCooldown: 3000, // 3 seconds between fireballs
+        isCharging: false,
+        chargeStartTime: 0,
+        chargeDuration: 1000, // 1 second to charge fireball
+        preferredDistance: 10, // Preferred distance from player
+        hasLineOfSight: false
+    };
+    
+    return enemyGroup;
+}
+
+// Create a fireball projectile
+function createFireball(position, direction) {
+    // Create a group for the fireball
+    const fireballGroup = new THREE.Group();
+    fireballGroup.position.copy(position);
+    
+    // Main fireball sphere
+    const fireballGeometry = new THREE.SphereGeometry(0.3, 12, 12);
+    const fireballMaterial = new THREE.MeshStandardMaterial({
+        color: 0xff5500,
+        emissive: 0xff3000,
+        emissiveIntensity: 0.8,
+        roughness: 0.3,
+        metalness: 0.5
+    });
+    const fireball = new THREE.Mesh(fireballGeometry, fireballMaterial);
+    fireballGroup.add(fireball);
+    
+    // Add fire particles
+    const particleCount = 12;
+    const particles = [];
+    
+    for (let i = 0; i < particleCount; i++) {
+        const particleGeometry = new THREE.SphereGeometry(0.1 + Math.random() * 0.1, 8, 8);
+        const particleMaterial = new THREE.MeshStandardMaterial({
+            color: Math.random() > 0.5 ? 0xff7700 : 0xff0000,
+            emissive: Math.random() > 0.5 ? 0xff5500 : 0xff0000,
+            emissiveIntensity: 0.7,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+        
+        // Random position around the fireball
+        const offset = new THREE.Vector3(
+            (Math.random() - 0.5) * 0.4,
+            (Math.random() - 0.5) * 0.4,
+            (Math.random() - 0.5) * 0.4
+        );
+        particle.position.copy(offset);
+        
+        particles.push({
+            mesh: particle,
+            basePosition: particle.position.clone(),
+            phase: Math.random() * Math.PI * 2,
+            speed: 0.03 + Math.random() * 0.03
+        });
+        
+        fireballGroup.add(particle);
+    }
+    
+    // Add a point light to make the fireball glow
+    const light = new THREE.PointLight(0xff5500, 1, 3);
+    light.position.set(0, 0, 0);
+    fireballGroup.add(light);
+    
+    // Add to scene
+    scene.add(fireballGroup);
+    
+    // Store fireball properties
+    const fireballData = {
+        mesh: fireballGroup,
+        direction: direction.clone().normalize(),
+        speed: 0.075, // Fireball speed (reduced by half from 0.15)
+        damage: 15, // Damage to player
+        particles: particles,
+        light: light,
+        creationTime: performance.now(),
+        lifetime: 8000 // Increased from 5000 to 8000 ms to compensate for slower speed
+    };
+    
+    // Add to fireballs array
+    fireballs.push(fireballData);
+    
+    // Play fireball sound
+    playSound('fireball', 0.5);
+    
+    // Animate the fireball
+    animateFireball(fireballData);
+    
+    return fireballData;
+}
+
+// Animate a fireball
+function animateFireball(fireballData) {
+    const startTime = performance.now();
+    
+    function animate() {
+        const currentTime = performance.now();
+        const elapsed = currentTime - startTime;
+        const totalElapsed = currentTime - fireballData.creationTime;
+        
+        // Check if fireball has expired
+        if (totalElapsed > fireballData.lifetime) {
+            // Remove fireball
+            scene.remove(fireballData.mesh);
+            const index = fireballs.indexOf(fireballData);
+            if (index !== -1) {
+                fireballs.splice(index, 1);
+            }
+            return;
+        }
+        
+        // Move fireball
+        fireballData.mesh.position.add(
+            fireballData.direction.clone().multiplyScalar(fireballData.speed)
+        );
+        
+        // Animate particles
+        fireballData.particles.forEach(particle => {
+            const time = currentTime * 0.001;
+            
+            // Oscillate particles
+            particle.mesh.position.x = particle.basePosition.x + Math.sin(time * 5 + particle.phase) * 0.1;
+            particle.mesh.position.y = particle.basePosition.y + Math.cos(time * 5 + particle.phase) * 0.1;
+            particle.mesh.position.z = particle.basePosition.z + Math.sin(time * 5 + particle.phase + Math.PI/2) * 0.1;
+            
+            // Pulse size
+            const scale = 0.8 + Math.sin(time * 10 + particle.phase) * 0.2;
+            particle.mesh.scale.set(scale, scale, scale);
+        });
+        
+        // Pulse light intensity
+        const time = currentTime * 0.001;
+        fireballData.light.intensity = 1 + Math.sin(time * 10) * 0.3;
+        
+        // Check for collisions with player
+        const playerPosition = new THREE.Vector3();
+        camera.getWorldPosition(playerPosition);
+        const distanceToPlayer = fireballData.mesh.position.distanceTo(playerPosition);
+        
+        if (distanceToPlayer < 1) {
+            // Hit player
+            playerTakeDamage(fireballData.damage, fireballData.mesh.position);
+            
+            // Create explosion effect
+            createFireballExplosion(fireballData.mesh.position);
+            
+            // Remove fireball
+            scene.remove(fireballData.mesh);
+            const index = fireballs.indexOf(fireballData);
+            if (index !== -1) {
+                fireballs.splice(index, 1);
+            }
+            return;
+        }
+        
+        // Check for collisions with environment
+        const rayDirection = fireballData.direction.clone();
+        const raycaster = new THREE.Raycaster(
+            fireballData.mesh.position.clone(),
+            rayDirection,
+            0,
+            fireballData.speed * 2
+        );
+        
+        const intersects = raycaster.intersectObjects(collisionObjects);
+        
+        if (intersects.length > 0) {
+            // Hit environment
+            createFireballExplosion(fireballData.mesh.position);
+            
+            // Remove fireball
+            scene.remove(fireballData.mesh);
+            const index = fireballs.indexOf(fireballData);
+            if (index !== -1) {
+                fireballs.splice(index, 1);
+            }
+            return;
+        }
+        
+        requestAnimationFrame(animate);
+    }
+    
+    animate();
+}
+
+// Create a fireball explosion effect
+function createFireballExplosion(position) {
+    // Create a group for the explosion
+    const explosionGroup = new THREE.Group();
+    explosionGroup.position.copy(position);
+    scene.add(explosionGroup);
+    
+    // Add explosion particles
+    const particleCount = 20;
+    const particles = [];
+    
+    for (let i = 0; i < particleCount; i++) {
+        const particleGeometry = new THREE.SphereGeometry(0.1 + Math.random() * 0.2, 8, 8);
+        const particleMaterial = new THREE.MeshStandardMaterial({
+            color: Math.random() > 0.5 ? 0xff7700 : 0xff0000,
+            emissive: Math.random() > 0.5 ? 0xff5500 : 0xff0000,
+            emissiveIntensity: 0.7,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+        
+        // Random position
+        particle.position.set(
+            (Math.random() - 0.5) * 0.2,
+            (Math.random() - 0.5) * 0.2,
+            (Math.random() - 0.5) * 0.2
+        );
+        
+        // Random velocity
+        const velocity = new THREE.Vector3(
+            (Math.random() - 0.5) * 0.1,
+            (Math.random() - 0.5) * 0.1 + 0.05,
+            (Math.random() - 0.5) * 0.1
+        );
+        
+        particles.push({
+            mesh: particle,
+            velocity: velocity,
+            gravity: 0.001 + Math.random() * 0.002
+        });
+        
+        explosionGroup.add(particle);
+    }
+    
+    // Add a flash effect
+    const flashGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+    const flashMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffff00,
+        transparent: true,
+        opacity: 1
+    });
+    const flash = new THREE.Mesh(flashGeometry, flashMaterial);
+    explosionGroup.add(flash);
+    
+    // Add a point light
+    const light = new THREE.PointLight(0xff5500, 2, 5);
+    light.position.set(0, 0, 0);
+    explosionGroup.add(light);
+    
+    // Play explosion sound
+    playSound('explosion', 0.6);
+    
+    // Animate the explosion
+    const startTime = performance.now();
+    const duration = 1000; // 1 second
+    
+    function animateExplosion() {
+        const currentTime = performance.now();
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        if (progress >= 1) {
+            // Remove explosion
+            scene.remove(explosionGroup);
+            return;
+        }
+        
+        // Update particles
+        particles.forEach(particle => {
+            // Apply gravity
+            particle.velocity.y -= particle.gravity;
+            
+            // Move particle
+            particle.mesh.position.add(particle.velocity);
+            
+            // Fade out
+            particle.mesh.material.opacity = 0.8 * (1 - progress);
+            
+            // Shrink
+            const scale = 1 - progress * 0.5;
+            particle.mesh.scale.set(scale, scale, scale);
+        });
+        
+        // Flash effect
+        if (progress < 0.2) {
+            // Expand flash
+            const flashScale = 1 + progress * 10;
+            flash.scale.set(flashScale, flashScale, flashScale);
+            flash.material.opacity = 1 - progress * 5;
+        } else {
+            flash.visible = false;
+        }
+        
+        // Light effect
+        light.intensity = 2 * (1 - progress);
+        
+        requestAnimationFrame(animateExplosion);
+    }
+    
+    animateExplosion();
 }
