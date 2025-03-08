@@ -24,7 +24,9 @@ let gameState = {
     recoilRecovery: 0, // Track recoil recovery progress
     currentGunType: 'pistol', // Current gun type: 'pistol' or 'machineGun'
     isReloading: false, // Track if the gun is currently reloading
-    isMouseDown: false // Track if mouse button is being held down
+    isMouseDown: false, // Track if mouse button is being held down
+    cameraOriginalY: null, // Store original camera position for recoil recovery
+    currentRecoil: { x: 0, y: 0 } // Track recoil effect on bullets
 };
 
 // Array to store active bullet projectiles
@@ -662,6 +664,16 @@ function shoot() {
     const shootDirection = new THREE.Vector3(0, 0, -1);
     shootDirection.applyQuaternion(camera.quaternion);
     
+    // Apply recoil effect to bullet trajectory
+    if (gameState.currentRecoil) {
+        // Add recoil-based spread to the bullet direction
+        shootDirection.x += gameState.currentRecoil.x;
+        shootDirection.y += gameState.currentRecoil.y;
+        
+        // Normalize to maintain consistent bullet speed
+        shootDirection.normalize();
+    }
+    
     // Create bullet projectile
     const bullet = createBulletProjectile(bulletStartPosition, shootDirection);
     
@@ -695,13 +707,27 @@ function applyRecoil() {
     weapon.position.y += 0.05;
     weapon.rotation.x -= 0.2; // Rotate up
     
-    // Camera recoil - add upward movement and slight random horizontal movement
-    const recoilX = (Math.random() - 0.5) * 0.01; // Small random horizontal recoil
-    const recoilY = 0.01; // Upward recoil
+    // Apply same recoil to machine gun if it's active
+    if (gameState.currentGunType === 'machineGun') {
+        machineGun.position.z += 0.15;
+        machineGun.position.y += 0.05;
+        machineGun.rotation.x -= 0.2;
+    }
     
-    // Apply recoil to camera rotation
-    camera.rotation.x -= recoilY;
-    camera.rotation.y += recoilX;
+    // Add vertical camera movement for effect (without rotation)
+    // Store the original camera position to recover from
+    if (!gameState.cameraOriginalY) {
+        gameState.cameraOriginalY = camera.position.y;
+    }
+    
+    // Move camera up slightly
+    camera.position.y += 0.05;
+    
+    // Store recoil amount for bullet trajectory
+    gameState.currentRecoil = {
+        x: (Math.random() - 0.5) * 0.05, // Random horizontal spread
+        y: 0.05 // Upward spread
+    };
 }
 
 // Process recoil recovery in the animation loop
@@ -727,6 +753,32 @@ function processRecoilRecovery(delta) {
         weapon.rotation.x = -0.2 * (1 - recovery);
     }
     
+    // Also recover machine gun if it's the active weapon
+    if (gameState.currentGunType === 'machineGun') {
+        if (machineGun.position.z > 0.3) {
+            machineGun.position.z = 0.3 + (0.15 * (1 - recovery));
+        }
+        
+        if (machineGun.position.y > -0.3) {
+            machineGun.position.y = -0.3 + (0.05 * (1 - recovery));
+        }
+        
+        if (machineGun.rotation.x < 0) {
+            machineGun.rotation.x = -0.2 * (1 - recovery);
+        }
+    }
+    
+    // Recover camera position
+    if (gameState.cameraOriginalY && camera.position.y > gameState.cameraOriginalY) {
+        camera.position.y = gameState.cameraOriginalY + (0.05 * (1 - recovery));
+    }
+    
+    // Gradually reduce recoil effect on bullets
+    if (gameState.currentRecoil) {
+        gameState.currentRecoil.x *= (1 - recovery);
+        gameState.currentRecoil.y *= (1 - recovery);
+    }
+    
     // If recovery complete, reset recoil state
     if (recovery >= 1) {
         gameState.recoilActive = false;
@@ -734,6 +786,18 @@ function processRecoilRecovery(delta) {
         // Ensure weapon is back to exact original position
         weapon.position.set(0.3, -0.3, -0.5);
         weapon.rotation.set(0, 0, 0);
+        
+        // Reset machine gun position too
+        machineGun.position.set(0.3, -0.3, -0.5);
+        machineGun.rotation.set(0, 0, 0);
+        
+        // Reset camera position
+        if (gameState.cameraOriginalY) {
+            camera.position.y = gameState.cameraOriginalY;
+        }
+        
+        // Reset recoil effect on bullets
+        gameState.currentRecoil = { x: 0, y: 0 };
     }
 }
 
@@ -868,26 +932,37 @@ function restartGame() {
         level: 1,
         score: 0,
         gameOver: false,
-        showInventory: false,
-        soundEnabled: gameState.soundEnabled, // Preserve sound setting
-        brokenWindows: [], // Reset broken windows
-        lastHitTime: 0, // Reset last hit time
-        showingRoundMessage: false, // Reset round message tracking
-        recoilActive: false, // Reset recoil state
-        recoilRecovery: 0, // Reset recoil recovery progress
+        recoilActive: false,
+        recoilRecovery: 0,
         currentGunType: 'pistol', // Reset to default pistol
         isReloading: false, // Reset reloading state
-        isMouseDown: false // Reset mouse button state
+        isMouseDown: false, // Reset mouse button state
+        cameraOriginalY: null, // Reset camera original position
+        currentRecoil: { x: 0, y: 0 } // Reset recoil effect on bullets
     };
     
-    // Remove all enemies
+    // Reset enemy arrays
     for (const enemy of enemies) {
         scene.remove(enemy.mesh);
     }
     enemies.length = 0;
     
+    // Reset bullet projectiles
+    for (const bullet of bulletProjectiles) {
+        scene.remove(bullet.mesh);
+    }
+    bulletProjectiles.length = 0;
+    
+    // Remove all health pickups
+    for (const pickup of healthPickups) {
+        pickup.isActive = false; // Mark as inactive to stop animations
+        scene.remove(pickup.mesh);
+    }
+    healthPickups.length = 0;
+    
     // Remove all bullet pickups
     for (const pickup of bulletPickups) {
+        pickup.isActive = false; // Mark as inactive to stop animations
         scene.remove(pickup.mesh);
     }
     bulletPickups.length = 0;
