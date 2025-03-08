@@ -7,6 +7,16 @@ const DEBUG = true;
 // Array to store objects that should have collision detection
 const collisionObjects = [];
 
+// Global arrays
+const bulletProjectiles = [];
+const enemies = [];
+const bulletPickups = [];
+const machineGunPickups = [];
+const pistolPickups = [];
+const sniperRiflePickups = [];
+const healthPickups = [];
+const shotgunPickups = [];
+
 // Game state
 let gameState = {
     health: 100,
@@ -22,7 +32,7 @@ let gameState = {
     showingRoundMessage: false, // Track if wave message is showing
     recoilActive: false, // Track if recoil is currently active
     recoilRecovery: 0, // Track recoil recovery progress
-    currentGunType: 'pistol', // Current gun type: 'pistol', 'machineGun', or 'sniperRifle'
+    currentGunType: 'pistol', // Current gun type: 'pistol', 'machineGun', 'sniperRifle', or 'shotgun'
     isReloading: false, // Track if the gun is currently reloading
     isMouseDown: false, // Track if mouse button is being held down
     cameraOriginalY: null, // Store original camera position for recoil recovery
@@ -32,9 +42,6 @@ let gameState = {
     lastPickupHintTime: 0, // Track when the last pickup hint was shown
     nearbyPickup: null // Track the type of nearby pickup
 };
-
-// Array to store active bullet projectiles
-const bulletProjectiles = [];
 
 // DOM elements
 const healthEl = document.getElementById('health');
@@ -72,14 +79,12 @@ let velocity = new THREE.Vector3();
 let weapon;
 let machineGun;
 let sniperRifle;
+let shotgun;
 
 scene.add(camera);
 
 // Add classic Mickey-style environment
 createEnvironment();
-
-// Add enemies
-const enemies = [];
 
 // Physics settings
 const gravity = 9.8;
@@ -99,21 +104,6 @@ scene.add(dirLight);
 const hemiLight = new THREE.HemisphereLight(0xffffff, 0xffffff, 0.6);
 scene.add(hemiLight);
 
-// Add bullet pickups
-const bulletPickups = [];
-
-// Add machine gun pickups
-const machineGunPickups = [];
-
-// Add pistol pickups
-const pistolPickups = [];
-
-// Add sniper rifle pickups
-const sniperRiflePickups = [];
-
-// Add health pickups
-const healthPickups = [];
-
 // Audio setup
 const audioListener = new THREE.AudioListener();
 camera.add(audioListener);
@@ -124,9 +114,12 @@ const soundEffects = {
     reload: new THREE.Audio(audioListener),
     enemyHit: new THREE.Audio(audioListener),
     enemyDeath: new THREE.Audio(audioListener),
-    puckupHealth: new THREE.Audio(audioListener),
+    pickupBullets: new THREE.Audio(audioListener),
+    pickupHealth: new THREE.Audio(audioListener), // Add this line for health pickup sound
     playerHurt: new THREE.Audio(audioListener), // New sound for player getting hit
-    sniperShoot: new THREE.Audio(audioListener) // New sound for sniper rifle
+    sniperShoot: new THREE.Audio(audioListener), // New sound for sniper rifle
+    explosion: new THREE.Audio(audioListener), // New sound for explosions
+    shotgunBlast: new THREE.Audio(audioListener) // New sound for shotgun
 };
 
 // Audio loader
@@ -156,8 +149,8 @@ function loadSoundEffects() {
     });
     
     audioLoader.load('https://assets.mixkit.co/active_storage/sfx/270/270-preview.mp3', function(buffer) {
-        soundEffects.puckupHealth.setBuffer(buffer);
-        soundEffects.puckupHealth.setVolume(0.5);
+        soundEffects.pickupHealth.setBuffer(buffer);
+        soundEffects.pickupHealth.setVolume(0.5);
     });
     
     // Player hurt sound - cartoon grunt/yelp
@@ -170,6 +163,12 @@ function loadSoundEffects() {
     audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1144/1144-preview.mp3', function(buffer) {
         soundEffects.sniperShoot.setBuffer(buffer);
         soundEffects.sniperShoot.setVolume(0.5);
+    });
+    
+    // Shotgun blast sound effect
+    audioLoader.load('https://cdn.freesound.org/previews/573/573269_4056087-lq.mp3', function(buffer) {
+        soundEffects.shotgunBlast.setBuffer(buffer);
+        soundEffects.shotgunBlast.setVolume(0.6);
     });
 }
 
@@ -223,6 +222,8 @@ controls.addEventListener('unlock', () => {
 });
 
 document.addEventListener('keydown', (event) => {
+    if (gameState.gameOver) return;
+    
     switch (event.code) {
         case 'ArrowUp':
         case 'KeyW':
@@ -242,7 +243,7 @@ document.addEventListener('keydown', (event) => {
             break;
         case 'Space':
             if (canJump) {
-                velocity.y += 5;
+                velocity.y = 5.0; // Jump velocity
                 canJump = false;
             }
             break;
@@ -716,6 +717,8 @@ function shoot() {
     // Play shoot sound
     if (gameState.currentGunType === 'sniperRifle') {
         playSound('sniperShoot');
+    } else if (gameState.currentGunType === 'shotgun') {
+        playSound('shotgunBlast');
     } else {
         playSound('shoot');
     }
@@ -746,6 +749,8 @@ function shoot() {
             machineGun.localToWorld(bulletStartPosition);
         } else if (gameState.currentGunType === 'sniperRifle') {
             sniperRifle.localToWorld(bulletStartPosition);
+        } else if (gameState.currentGunType === 'shotgun') {
+            shotgun.localToWorld(bulletStartPosition);
         }
     }
     
@@ -765,35 +770,74 @@ function shoot() {
         shootDirection.normalize();
     }
     
-    // Create bullet projectile
-    const bullet = createBulletProjectile(bulletStartPosition, shootDirection);
-    
-    // Set bullet damage based on weapon type
-    if (gameState.currentGunType === 'machineGun') {
-        bullet.damage = 30; // Machine gun does less damage per bullet
-    } else if (gameState.currentGunType === 'sniperRifle') {
-        bullet.damage = 200; // Sniper rifle does massive damage
-        bullet.speed = 30; // Faster bullet
+    // Create projectile based on weapon type
+    let projectile;
+
+    if (gameState.currentGunType === 'shotgun') {
+        // Shotgun fires multiple pellets in a spread pattern
+        const pelletCount = 8; // Number of pellets per shot
         
-        // Create a tracer effect for sniper rifle
-        const tracerGeometry = new THREE.CylinderGeometry(0.01, 0.01, 100, 8);
-        const tracerMaterial = new THREE.MeshBasicMaterial({ 
-            color: 0xff0000,
-            transparent: true,
-            opacity: 0.3
-        });
-        const tracer = new THREE.Mesh(tracerGeometry, tracerMaterial);
-        tracer.rotation.x = Math.PI / 2;
-        tracer.position.z = -50; // Position behind the bullet
-        bullet.mesh.add(tracer);
-        
-        // Flash effect
+        // Create muzzle flash
         createMuzzleFlash(bulletStartPosition);
+        
+        // Create multiple pellets with spread
+        for (let i = 0; i < pelletCount; i++) {
+            // Create a slightly randomized direction for each pellet
+            const spreadDirection = shootDirection.clone();
+            
+            // Add random spread (more horizontal than vertical)
+            spreadDirection.x += (Math.random() - 0.5) * 0.1;
+            spreadDirection.y += (Math.random() - 0.5) * 0.05;
+            spreadDirection.z += (Math.random() - 0.5) * 0.02;
+            
+            // Normalize to maintain consistent speed
+            spreadDirection.normalize();
+            
+            // Create pellet projectile
+            const pellet = createBulletProjectile(bulletStartPosition, spreadDirection);
+            
+            // Pellets do less damage individually but combined they do more
+            pellet.damage = 25; // Each pellet does 25 damage, potentially 200 total at point blank
+            pellet.isShotgunPellet = true; // Mark as shotgun pellet
+            
+            // Pellets have shorter range
+            pellet.maxDistance = 20;
+            
+            // Add to projectiles array
+            bulletProjectiles.push(pellet);
+        }
+        
+        // No need to add a projectile at the end since we've already added all pellets
+        return;
+    } else {
+        // Create bullet projectile
+        projectile = createBulletProjectile(bulletStartPosition, shootDirection);
+        
+        // Set bullet damage based on weapon type
+        if (gameState.currentGunType === 'machineGun') {
+            projectile.damage = 30; // Machine gun does less damage per bullet
+        } else if (gameState.currentGunType === 'sniperRifle') {
+            projectile.damage = 200; // Sniper rifle does massive damage
+            projectile.speed = 30; // Faster bullet
+            
+            // Create a tracer effect for sniper rifle
+            const tracerGeometry = new THREE.CylinderGeometry(0.01, 0.01, 100, 8);
+            const tracerMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0xff0000,
+                transparent: true,
+                opacity: 0.3
+            });
+            const tracer = new THREE.Mesh(tracerGeometry, tracerMaterial);
+            tracer.rotation.x = Math.PI / 2;
+            tracer.position.z = -50; // Position behind the bullet
+            projectile.mesh.add(tracer);
+            
+            // Flash effect
+            createMuzzleFlash(bulletStartPosition);
+        }
     }
-    
-    bulletProjectiles.push(bullet);
-    
-    // Machine gun auto-fire is now handled in the animate function
+
+    bulletProjectiles.push(projectile);
 }
 
 // Create muzzle flash effect
@@ -860,6 +904,11 @@ function applyRecoil() {
         sniperRifle.position.z += 0.3;
         sniperRifle.position.y += 0.1;
         sniperRifle.rotation.x -= 0.4;
+    } else if (gameState.currentGunType === 'shotgun') {
+        // Shotgun has strong recoil
+        shotgun.position.z += 0.25;
+        shotgun.position.y += 0.1;
+        shotgun.rotation.x -= 0.3;
     }
     
     // Add vertical camera movement for effect (without rotation)
@@ -868,17 +917,33 @@ function applyRecoil() {
         gameState.cameraOriginalY = camera.position.y;
     }
     
-    // Move camera up slightly - more for sniper rifle
-    const cameraRecoil = gameState.currentGunType === 'sniperRifle' ? 0.1 : 0.05;
+    // Move camera up slightly - different amounts based on weapon
+    let cameraRecoil = 0.05; // Default
+    
+    if (gameState.currentGunType === 'sniperRifle') {
+        cameraRecoil = 0.1;
+    } else if (gameState.currentGunType === 'shotgun') {
+        cameraRecoil = 0.12;
+    }
+    
     camera.position.y += cameraRecoil;
     
     // Store recoil amount for bullet trajectory
-    const recoilX = (Math.random() - 0.5) * (gameState.currentGunType === 'sniperRifle' ? 0.08 : 0.05);
-    const recoilY = gameState.currentGunType === 'sniperRifle' ? 0.08 : 0.05;
+    let recoilX = (Math.random() - 0.5) * 0.05; // Default
+    let recoilY = 0.05; // Default
+    
+    if (gameState.currentGunType === 'sniperRifle') {
+        recoilX = (Math.random() - 0.5) * 0.08;
+        recoilY = 0.08;
+    } else if (gameState.currentGunType === 'shotgun') {
+        // Shotgun has more horizontal spread in recoil
+        recoilX = (Math.random() - 0.5) * 0.12;
+        recoilY = 0.07;
+    }
     
     gameState.currentRecoil = {
-        x: recoilX, // Random horizontal spread
-        y: recoilY // Upward spread
+        x: recoilX,
+        y: recoilY
     };
 }
 
@@ -929,11 +994,30 @@ function processRecoilRecovery(delta) {
         if (sniperRifle.rotation.x < 0) {
             sniperRifle.rotation.x = -0.4 * (1 - recovery);
         }
+    } else if (gameState.currentGunType === 'shotgun') {
+        if (shotgun.position.z > 0.3) {
+            shotgun.position.z = 0.3 + (0.25 * (1 - recovery));
+        }
+        
+        if (shotgun.position.y > -0.3) {
+            shotgun.position.y = -0.3 + (0.1 * (1 - recovery));
+        }
+        
+        if (shotgun.rotation.x < 0) {
+            shotgun.rotation.x = -0.3 * (1 - recovery);
+        }
     }
     
     // Recover camera position
     if (gameState.cameraOriginalY && camera.position.y > gameState.cameraOriginalY) {
-        const cameraRecoil = gameState.currentGunType === 'sniperRifle' ? 0.1 : 0.05;
+        let cameraRecoil = 0.05; // Default
+        
+        if (gameState.currentGunType === 'sniperRifle') {
+            cameraRecoil = 0.1;
+        } else if (gameState.currentGunType === 'shotgun') {
+            cameraRecoil = 0.12;
+        }
+        
         camera.position.y = gameState.cameraOriginalY + (cameraRecoil * (1 - recovery));
     }
     
@@ -958,6 +1042,10 @@ function processRecoilRecovery(delta) {
         // Reset sniper rifle position
         sniperRifle.position.set(0.3, -0.3, -0.5);
         sniperRifle.rotation.set(0, 0, 0);
+        
+        // Reset shotgun position
+        shotgun.position.set(0.3, -0.3, -0.5);
+        shotgun.rotation.set(0, 0, 0);
         
         // Reset camera position
         if (gameState.cameraOriginalY) {
@@ -996,7 +1084,14 @@ function updateUI() {
     // Update weapon info in inventory
     const weaponNameEl = document.querySelector('.inventory-item:nth-child(1)');
     if (weaponNameEl) {
-        const gunName = gameState.currentGunType === 'pistol' ? "Cartoon Blaster" : gameState.currentGunType === 'machineGun' ? "Machine Gun" : "Sniper Rifle";
+        let gunName;
+        switch(gameState.currentGunType) {
+            case 'pistol': gunName = "Cartoon Blaster"; break;
+            case 'machineGun': gunName = "Machine Gun"; break;
+            case 'sniperRifle': gunName = "Sniper Rifle"; break;
+            case 'shotgun': gunName = "Shotgun"; break;
+            default: gunName = "Unknown Weapon";
+        }
         weaponNameEl.textContent = `🔫 Weapon: ${gunName}`;
     }
     
@@ -1055,7 +1150,7 @@ function interactWithPickups() {
             machineGunPickups.splice(i, 1);
             
             // Play pickup sound
-            playSound('puckupHealth');
+            playSound('pickupHealth');
             
             // Show notification
             showNotification("Machine Gun acquired!");
@@ -1103,7 +1198,7 @@ function interactWithPickups() {
             pistolPickups.splice(i, 1);
             
             // Play pickup sound
-            playSound('puckupHealth');
+            playSound('pickupHealth');
             
             // Show notification
             showNotification("Pistol acquired!");
@@ -1146,10 +1241,61 @@ function interactWithPickups() {
             sniperRiflePickups.splice(i, 1);
             
             // Play pickup sound
-            playSound('puckupHealth');
+            playSound('pickupHealth');
             
             // Show notification
             showNotification("Sniper Rifle acquired!");
+            
+            updateUI();
+            return; // Exit after picking up
+        }
+    }
+    
+    // Check for shotgun pickups
+    for (let i = shotgunPickups.length - 1; i >= 0; i--) {
+        const pickup = shotgunPickups[i];
+        const distance = playerPosition.distanceTo(pickup.mesh.position);
+        
+        if (distance < 2) { // Interaction range
+            // Drop current gun and create a pickup for it
+            const dropPosition = playerPosition.clone();
+            dropPosition.y = 0.5; // Slightly above ground
+            
+            if (gameState.currentGunType === 'pistol') {
+                pistolPickups.push(createPistolPickup(dropPosition));
+            } else if (gameState.currentGunType === 'machineGun') {
+                machineGunPickups.push(createMachineGunPickup(dropPosition));
+            } else if (gameState.currentGunType === 'sniperRifle') {
+                sniperRiflePickups.push(createSniperRiflePickup(dropPosition));
+            }
+            
+            // Pick up shotgun
+            gameState.currentGunType = 'shotgun';
+            gameState.ammo = gameState.maxAmmo = 8; // Shotgun has 8 shells
+            
+            // Update weapon visibility
+            weapon.visible = false;
+            machineGun.visible = false;
+            sniperRifle.visible = false;
+            shotgun.visible = true;
+            
+            // Reset zoom if coming from sniper rifle
+            if (gameState.isZoomed) {
+                toggleZoom();
+            }
+            
+            // Mark pickup as inactive before removing it
+            pickup.isActive = false;
+            
+            // Remove pickup
+            scene.remove(pickup.mesh);
+            shotgunPickups.splice(i, 1);
+            
+            // Play pickup sound
+            playSound('pickupBullets');
+            
+            // Show notification
+            showNotification("Shotgun acquired!");
             
             updateUI();
             return; // Exit after picking up
@@ -1533,9 +1679,11 @@ function init() {
     weapon = createWeapon();
     machineGun = createMachineGun();
     sniperRifle = createSniperRifle();
+    shotgun = createShotgun();
     camera.add(weapon);
     camera.add(machineGun);
     camera.add(sniperRifle);
+    camera.add(shotgun);
     
     // Update UI after elements are initialized
     updateUI();
@@ -1693,16 +1841,20 @@ function updateBulletProjectiles(delta) {
                         // 20% chance to drop health
                         healthPickups.push(createHealthPickup(enemyPosition));
                         debugLog('Enemy dropped health');
-                    } else if (dropRoll < 0.3) {
-                        // 10% chance to drop machine gun
-                        machineGunPickups.push(createMachineGunPickup(enemyPosition));
-                        debugLog('Enemy dropped machine gun');
-                    } else if (dropRoll < 0.35) {
-                        // 5% chance to drop sniper rifle (rare)
-                        sniperRiflePickups.push(createSniperRiflePickup(enemyPosition));
-                        debugLog('Enemy dropped sniper rifle');
+                    // } else if (dropRoll < 0.3) {
+                    //     // 10% chance to drop machine gun
+                    //     machineGunPickups.push(createMachineGunPickup(enemyPosition));
+                    //     debugLog('Enemy dropped machine gun');
+                    // } else if (dropRoll < 0.35) {
+                    //     // 5% chance to drop sniper rifle (rare)
+                    //     sniperRiflePickups.push(createSniperRiflePickup(enemyPosition));
+                    //     debugLog('Enemy dropped sniper rifle');
+                    } else if (dropRoll <0.9) {
+                        // 5% chance to drop shotgun
+                        shotgunPickups.push(createShotgunPickup(enemyPosition));
+                        debugLog('Enemy dropped shotgun');
                     } else {
-                        // 65% chance to drop nothing
+                        // 58% chance to drop nothing
                         debugLog('Enemy dropped nothing');
                     }
                     
@@ -2299,7 +2451,7 @@ function animate() {
                 // Handle different pickup types
                 if (pickup.type === 'health') {
                     gameState.health = Math.min(100, gameState.health + pickup.health);
-                    playSound('puckupHealth'); // Reuse bullet pickup sound for now
+                    playSound('pickupHealth'); // Reuse bullet pickup sound for now
                     
                     scene.remove(pickup.mesh);
                     bulletPickups.splice(i, 1);
@@ -2694,6 +2846,9 @@ function showPickupHint(gunType) {
         case 'sniperRifle':
             gunName = "Sniper Rifle";
             break;
+        case 'shotgun':
+            gunName = "Shotgun";
+            break;
     }
     
     hintEl.textContent = `Press E to pick up ${gunName}`;
@@ -2756,6 +2911,17 @@ function checkForNearbyPickups() {
         }
     }
     
+    // Check for shotgun pickups
+    for (const pickup of shotgunPickups) {
+        const distance = playerPosition.distanceTo(pickup.mesh.position);
+        
+        if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
+            nearestDistance = distance;
+            nearestPickupType = 'shotgun';
+            foundNearbyPickup = true;
+        }
+    }
+    
     // Show or hide hint based on nearby pickups
     if (foundNearbyPickup) {
         // Only show hint if pickup type changed or it's been more than 5 seconds
@@ -2795,7 +2961,7 @@ function checkForHealthPickups() {
             healthPickups.splice(i, 1);
             
             // Play pickup sound
-            playSound('puckupHealth');
+            playSound('pickupHealth');
             
             // Show notification
             showNotification(`+${pickup.health} Health!`);
@@ -2902,6 +3068,23 @@ function checkForExpiredPickups(currentTime) {
             fadePickupMesh(pickup.mesh, opacity);
         }
     }
+    
+    // Check for expired shotgun pickups
+    for (let i = shotgunPickups.length - 1; i >= 0; i--) {
+        const pickup = shotgunPickups[i];
+        const age = currentTime - pickup.timeCreated;
+        
+        if (age > WEAPON_TIMEOUT) {
+            // Remove pickup
+            pickup.isActive = false;
+            scene.remove(pickup.mesh);
+            shotgunPickups.splice(i, 1);
+        } else if (age > WEAPON_TIMEOUT - FADE_START) {
+            // Fade out pickup
+            const opacity = 1 - ((age - (WEAPON_TIMEOUT - FADE_START)) / FADE_START);
+            fadePickupMesh(pickup.mesh, opacity);
+        }
+    }
 }
 
 // Helper function to fade out a pickup mesh (which might have child meshes)
@@ -2918,4 +3101,108 @@ function fadePickupMesh(mesh, opacity) {
             fadePickupMesh(child, opacity);
         }
     }
+}
+
+// Create a shotgun weapon
+function createShotgun() {
+    debugLog('Creating shotgun');
+    // Create a cartoon-style shotgun
+    const weaponGroup = new THREE.Group();
+    
+    // Main barrel - shorter and wider than other guns
+    const barrelGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8);
+    const barrelMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
+    const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
+    barrel.rotation.z = Math.PI / 2; // Rotate to horizontal position
+    
+    // Second barrel below the first
+    const barrel2 = barrel.clone();
+    barrel2.position.y = -0.06;
+    
+    // Stock - wooden look
+    const stockGeometry = new THREE.BoxGeometry(0.3, 0.1, 0.08);
+    const stockMaterial = new THREE.MeshBasicMaterial({ color: 0x8B4513 }); // Brown for wood
+    const stock = new THREE.Mesh(stockGeometry, stockMaterial);
+    stock.position.x = -0.2;
+    
+    // Pump handle
+    const pumpGeometry = new THREE.BoxGeometry(0.15, 0.06, 0.1);
+    const pumpMaterial = new THREE.MeshBasicMaterial({ color: 0x8B4513 });
+    const pump = new THREE.Mesh(pumpGeometry, pumpMaterial);
+    pump.position.x = 0.1;
+    pump.position.y = -0.1;
+    
+    // Trigger guard
+    const guardGeometry = new THREE.BoxGeometry(0.08, 0.12, 0.04);
+    const guardMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
+    const guard = new THREE.Mesh(guardGeometry, guardMaterial);
+    guard.position.x = -0.05;
+    guard.position.y = -0.1;
+    
+    // Add all parts to the weapon group
+    weaponGroup.add(barrel);
+    weaponGroup.add(barrel2);
+    weaponGroup.add(stock);
+    weaponGroup.add(pump);
+    weaponGroup.add(guard);
+    
+    // Position the weapon
+    weaponGroup.position.set(0.3, -0.3, -0.5);
+    weaponGroup.visible = false; // Hide initially
+    
+    return weaponGroup;
+}
+
+// Create a shotgun pickup
+function createShotgunPickup(position) {
+    // Create a visual representation of the shotgun
+    const gunGroup = new THREE.Group();
+    
+    // Main barrel
+    const barrelGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8);
+    const barrelMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
+    const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
+    barrel.rotation.z = Math.PI / 2; // Rotate to horizontal position
+    
+    // Second barrel below the first
+    const barrel2 = barrel.clone();
+    barrel2.position.y = -0.06;
+    barrel.add(barrel2);
+    
+    // Stock - wooden look
+    const stockGeometry = new THREE.BoxGeometry(0.3, 0.1, 0.08);
+    const stockMaterial = new THREE.MeshBasicMaterial({ color: 0x8B4513 }); // Brown for wood
+    const stock = new THREE.Mesh(stockGeometry, stockMaterial);
+    stock.position.x = -0.2;
+    barrel.add(stock);
+    
+    // Position at the specified location
+    barrel.position.copy(position);
+    barrel.position.y = 0.5; // Slightly above ground
+    
+    // Add to scene
+    scene.add(barrel);
+    
+    // Create pickup object
+    const pickup = {
+        mesh: barrel,
+        type: 'shotgun',
+        timeCreated: performance.now(),
+        isActive: true // Flag to track if pickup is still active
+    };
+    
+    // Add floating animation
+    const floatAnimation = () => {
+        if (!pickup.isActive) return; // Stop animation if pickup is no longer active
+        
+        barrel.position.y = 0.5 + Math.sin(performance.now() * 0.002) * 0.1;
+        barrel.rotation.y += 0.01;
+        
+        requestAnimationFrame(floatAnimation);
+    };
+    
+    // Start the animation
+    floatAnimation();
+    
+    return pickup;
 }
