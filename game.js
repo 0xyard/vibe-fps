@@ -165,14 +165,15 @@ const soundEffects = {
     enemyHit: new THREE.Audio(audioListener),
     enemyDeath: new THREE.Audio(audioListener),
     pickupBullets: new THREE.Audio(audioListener),
-    pickupHealth: new THREE.Audio(audioListener), // Add this line for health pickup sound
-    playerHurt: new THREE.Audio(audioListener), // New sound for player getting hit
-    sniperShoot: new THREE.Audio(audioListener), // New sound for sniper rifle
-    explosion: new THREE.Audio(audioListener), // New sound for explosions
-    shotgunBlast: new THREE.Audio(audioListener), // New sound for shotgun
-    rocketLaunch: new THREE.Audio(audioListener), // New sound for rocket launcher
-    teleport: new THREE.Audio(audioListener), // New sound for teleportation
-    thud: new THREE.Audio(audioListener) // New sound for club swing
+    pickupHealth: new THREE.Audio(audioListener),
+    playerHurt: new THREE.Audio(audioListener),
+    sniperShoot: new THREE.Audio(audioListener),
+    explosion: new THREE.Audio(audioListener),
+    shotgunBlast: new THREE.Audio(audioListener),
+    rocketLaunch: new THREE.Audio(audioListener),
+    teleport: new THREE.Audio(audioListener),
+    thud: new THREE.Audio(audioListener),
+    waveStart: new THREE.Audio(audioListener)
 };
 
 // Audio loader
@@ -186,7 +187,7 @@ function loadSoundEffects() {
         soundEffects.shoot.setVolume(0.5);
     });
     
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/2020/2020-preview.mp3', function(buffer) {
+    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1666/1666-preview.mp3', function(buffer) {
         soundEffects.reload.setBuffer(buffer);
         soundEffects.reload.setVolume(0.5);
     });
@@ -196,7 +197,7 @@ function loadSoundEffects() {
         soundEffects.enemyHit.setVolume(0.5);
     });
     
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/561/561-preview.mp3', function(buffer) {
+    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/3168/3168-preview.mp3', function(buffer) {
         soundEffects.enemyDeath.setBuffer(buffer);
         soundEffects.enemyDeath.setVolume(0.5);
     });
@@ -240,6 +241,12 @@ function loadSoundEffects() {
     audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1146/1146-preview.mp3', function(buffer) {
         soundEffects.thud.setBuffer(buffer);
         soundEffects.thud.setVolume(0.5);
+    });
+    
+    // Wave start sound effect
+    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/2780/2780-preview.mp3', function(buffer) {
+        soundEffects.waveStart.setBuffer(buffer);
+        soundEffects.waveStart.setVolume(0.7);
     });
 }
 
@@ -1732,6 +1739,9 @@ let scoreDisplay;
 // Show wave notification
 function showRoundNotification(round) {
     if (!roundNotification || gameState.showingRoundMessage) return;
+    
+    // Play wave start sound
+    playSound('waveStart', 0.7);
     
     gameState.showingRoundMessage = true;
     roundNotification.textContent = `WAVE ${round}`;
@@ -4186,10 +4196,220 @@ function createTeleportEffect(position) {
     animateParticles();
 }
 
+// Create death animation for enemies
+function createDeathAnimation(enemy, position) {
+    // Create a group to hold all the death animation parts
+    const deathGroup = new THREE.Group();
+    deathGroup.position.copy(position);
+    scene.add(deathGroup);
+    
+    // Determine enemy type for appropriate death animation
+    const enemyType = enemy.type || 'regular';
+
+    playSound('enemyDeath', 0.5);
+    
+    // Create fragments based on enemy type
+    const fragments = [];
+    const fragmentCount = 12; // Number of fragments
+    
+    // Different fragment colors and shapes based on enemy type
+    let fragmentColor, fragmentSize, fragmentShape;
+    
+    switch (enemyType) {
+        case 'spider':
+            fragmentColor = 0x222222;
+            fragmentSize = 0.15;
+            fragmentShape = 'sphere';
+            break;
+        case 'flying':
+            fragmentColor = 0xFFFFFF;
+            fragmentSize = 0.2;
+            fragmentShape = 'ghost';
+            break;
+        case 'ninja':
+            fragmentColor = 0x222222;
+            fragmentSize = 0.18;
+            fragmentShape = 'cube';
+            break;
+        case 'cyclops':
+            fragmentColor = 0x8B4513;
+            fragmentSize = 0.25;
+            fragmentShape = 'chunk';
+            break;
+        default:
+            fragmentColor = 0x000000;
+            fragmentSize = 0.15;
+            fragmentShape = 'sphere';
+    }
+    
+    // Create fragments
+    for (let i = 0; i < fragmentCount; i++) {
+        let fragmentGeometry;
+        
+        // Create different shaped fragments based on enemy type
+        if (fragmentShape === 'sphere') {
+            fragmentGeometry = new THREE.SphereGeometry(fragmentSize * (0.5 + Math.random() * 0.5), 8, 8);
+        } else if (fragmentShape === 'ghost') {
+            fragmentGeometry = new THREE.SphereGeometry(fragmentSize * (0.5 + Math.random() * 0.5), 8, 8);
+            // Stretch the bottom to create a ghost-like tail
+            for (let j = 0; j < fragmentGeometry.attributes.position.count; j++) {
+                const y = fragmentGeometry.attributes.position.getY(j);
+                if (y < 0) {
+                    fragmentGeometry.attributes.position.setY(
+                        j, 
+                        y * (1.0 - y * 0.8)
+                    );
+                }
+            }
+            fragmentGeometry.computeVertexNormals();
+        } else if (fragmentShape === 'cube') {
+            fragmentGeometry = new THREE.BoxGeometry(
+                fragmentSize * (0.5 + Math.random() * 0.5),
+                fragmentSize * (0.5 + Math.random() * 0.5),
+                fragmentSize * (0.5 + Math.random() * 0.5)
+            );
+        } else if (fragmentShape === 'chunk') {
+            // Create irregular chunk shapes for cyclops
+            fragmentGeometry = new THREE.SphereGeometry(fragmentSize * (0.5 + Math.random() * 0.5), 8, 8);
+            // Deform the sphere randomly to make it look like a chunk
+            for (let j = 0; j < fragmentGeometry.attributes.position.count; j++) {
+                const x = fragmentGeometry.attributes.position.getX(j);
+                const y = fragmentGeometry.attributes.position.getY(j);
+                const z = fragmentGeometry.attributes.position.getZ(j);
+                
+                fragmentGeometry.attributes.position.setX(j, x * (0.8 + Math.random() * 0.4));
+                fragmentGeometry.attributes.position.setY(j, y * (0.8 + Math.random() * 0.4));
+                fragmentGeometry.attributes.position.setZ(j, z * (0.8 + Math.random() * 0.4));
+            }
+            fragmentGeometry.computeVertexNormals();
+        }
+        
+        // Create fragment material
+        const fragmentMaterial = new THREE.MeshStandardMaterial({
+            color: fragmentColor,
+            roughness: 0.7,
+            metalness: 0.3
+        });
+        
+        // For flying enemies, make fragments transparent
+        if (enemyType === 'flying') {
+            fragmentMaterial.transparent = true;
+            fragmentMaterial.opacity = 0.8;
+        }
+        
+        // Create fragment mesh
+        const fragment = new THREE.Mesh(fragmentGeometry, fragmentMaterial);
+        fragment.castShadow = true;
+        
+        // Random position offset
+        const offset = new THREE.Vector3(
+            (Math.random() - 0.5) * 0.5,
+            (Math.random() - 0.5) * 0.5,
+            (Math.random() - 0.5) * 0.5
+        );
+        fragment.position.copy(offset);
+        
+        // Random rotation
+        fragment.rotation.set(
+            Math.random() * Math.PI * 2,
+            Math.random() * Math.PI * 2,
+            Math.random() * Math.PI * 2
+        );
+        
+        // Random velocity
+        const velocity = new THREE.Vector3(
+            (Math.random() - 0.5) * 0.1,
+            Math.random() * 0.15,
+            (Math.random() - 0.5) * 0.1
+        );
+        
+        // Random rotation velocity
+        const rotationVelocity = new THREE.Vector3(
+            (Math.random() - 0.5) * 0.2,
+            (Math.random() - 0.5) * 0.2,
+            (Math.random() - 0.5) * 0.2
+        );
+        
+        // Add to fragments array with properties
+        fragments.push({
+            mesh: fragment,
+            velocity: velocity,
+            rotationVelocity: rotationVelocity,
+            gravity: 0.005 + Math.random() * 0.005
+        });
+        
+        deathGroup.add(fragment);
+    }
+    
+    // Add a flash effect at the center
+    const flashGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+    const flashMaterial = new THREE.MeshBasicMaterial({
+        color: 0xFFFFFF,
+        transparent: true,
+        opacity: 1
+    });
+    const flash = new THREE.Mesh(flashGeometry, flashMaterial);
+    deathGroup.add(flash);
+    
+    // Animate the death effect
+    const startTime = performance.now();
+    const duration = 1500; // 1.5 seconds
+    
+    function animateDeath() {
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        if (progress >= 1) {
+            // Remove the death effect when animation is complete
+            scene.remove(deathGroup);
+            return;
+        }
+        
+        // Update fragments
+        fragments.forEach(fragment => {
+            // Apply gravity
+            fragment.velocity.y -= fragment.gravity;
+            
+            // Move fragment
+            fragment.mesh.position.x += fragment.velocity.x;
+            fragment.mesh.position.y += fragment.velocity.y;
+            fragment.mesh.position.z += fragment.velocity.z;
+            
+            // Rotate fragment
+            fragment.mesh.rotation.x += fragment.rotationVelocity.x;
+            fragment.mesh.rotation.y += fragment.rotationVelocity.y;
+            fragment.mesh.rotation.z += fragment.rotationVelocity.z;
+            
+            // Fade out fragment
+            if (fragment.mesh.material.opacity) {
+                fragment.mesh.material.opacity = Math.max(0, 1 - progress * 1.5);
+            }
+            
+            // Shrink fragment slightly
+            const scale = Math.max(0.1, 1 - progress * 0.5);
+            fragment.mesh.scale.set(scale, scale, scale);
+        });
+        
+        // Flash effect
+        if (progress < 0.2) {
+            // Expand flash
+            const flashScale = 1 + progress * 5;
+            flash.scale.set(flashScale, flashScale, flashScale);
+            flash.material.opacity = 1 - progress * 5; // Fade out quickly
+        } else {
+            flash.visible = false;
+        }
+        
+        requestAnimationFrame(animateDeath);
+    }
+    
+    animateDeath();
+}
+
 // Helper function to handle enemy defeat
 function handleEnemyDefeat(enemy, position) {
-    // Play enemy death sound
-    playSound('enemyDeath');
+    // Create death animation (which now plays the appropriate death sound)
+    createDeathAnimation(enemy, position);
     
     // Remove enemy from scene
     scene.remove(enemy.mesh);
