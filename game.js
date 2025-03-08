@@ -12,7 +12,6 @@ let gameState = {
     health: 100,
     ammo: 10,
     maxAmmo: 10,
-    bullets: 30, // Total bullets in inventory
     level: 1,
     score: 0,
     gameOver: false,
@@ -20,8 +19,16 @@ let gameState = {
     soundEnabled: true,
     brokenWindows: [], // Track which windows are broken
     lastHitTime: 0, // Track when player was last hit
-    showingRoundMessage: false // Track if wave message is showing
+    showingRoundMessage: false, // Track if wave message is showing
+    recoilActive: false, // Track if recoil is currently active
+    recoilRecovery: 0, // Track recoil recovery progress
+    currentGunType: 'pistol', // Current gun type: 'pistol' or 'machineGun'
+    isReloading: false, // Track if the gun is currently reloading
+    isMouseDown: false // Track if mouse button is being held down
 };
+
+// Array to store active bullet projectiles
+const bulletProjectiles = [];
 
 // DOM elements
 const healthEl = document.getElementById('health');
@@ -56,8 +63,9 @@ let canJump = false;
 let velocity = new THREE.Vector3();
 
 // Weapon setup
-const weapon = createWeapon();
-camera.add(weapon);
+let weapon;
+let machineGun;
+
 
 // Create fist for melee attack
 const fist = createFist();
@@ -91,6 +99,12 @@ scene.add(hemiLight);
 
 // Add bullet pickups
 const bulletPickups = [];
+
+// Add machine gun pickups
+const machineGunPickups = [];
+
+// Add pistol pickups
+const pistolPickups = [];
 
 // Audio setup
 const audioListener = new THREE.AudioListener();
@@ -177,8 +191,16 @@ document.addEventListener('mousedown', (event) => {
     if (!controls.isLocked) {
         controls.lock();
     } else if (!gameState.gameOver) {
+        gameState.isMouseDown = true;
         shoot();
     }
+});
+
+document.addEventListener('mouseup', (event) => {
+    // Only handle left mouse button release (button 0)
+    if (event.button !== 0) return;
+    
+    gameState.isMouseDown = false;
 });
 
 controls.addEventListener('lock', () => {
@@ -220,6 +242,15 @@ document.addEventListener('keydown', (event) => {
             break;
         case 'KeyI':
             toggleInventory();
+            break;
+        case 'KeyE':
+            interactWithPickups();
+            break;
+        case 'Digit1':
+            switchWeapon(1);
+            break;
+        case 'Digit2':
+            switchWeapon(2);
             break;
     }
 });
@@ -318,6 +349,48 @@ function createWeapon() {
     return weaponGroup;
 }
 
+// Create machine gun weapon
+function createMachineGun() {
+    debugLog('Creating machine gun');
+    // Create a cartoon-style machine gun
+    const weaponGroup = new THREE.Group();
+    
+    // Gun body (larger than regular gun)
+    const gunGeometry = new THREE.BoxGeometry(0.12, 0.12, 0.4);
+    const gunMaterial = new THREE.MeshBasicMaterial({ color: 0x555555 }); // Darker color
+    const gun = new THREE.Mesh(gunGeometry, gunMaterial);
+    
+    // Barrel (longer than regular gun)
+    const barrelGeometry = new THREE.CylinderGeometry(0.03, 0.03, 0.6, 8);
+    const barrel = new THREE.Mesh(barrelGeometry, gunMaterial);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.z = -0.3;
+    
+    // Add magazine
+    const magazineGeometry = new THREE.BoxGeometry(0.08, 0.2, 0.1);
+    const magazineMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
+    const magazine = new THREE.Mesh(magazineGeometry, magazineMaterial);
+    magazine.position.y = -0.15;
+    
+    // Add handle
+    const handleGeometry = new THREE.BoxGeometry(0.08, 0.15, 0.1);
+    const handle = new THREE.Mesh(handleGeometry, magazineMaterial);
+    handle.position.y = -0.1;
+    handle.position.z = 0.1;
+    handle.rotation.x = 0.3;
+    
+    weaponGroup.add(gun);
+    weaponGroup.add(barrel);
+    weaponGroup.add(magazine);
+    weaponGroup.add(handle);
+    
+    // Position the weapon
+    weaponGroup.position.set(0.3, -0.3, -0.5);
+    weaponGroup.visible = false; // Hide initially
+    
+    return weaponGroup;
+}
+
 // Remove the createCentralBuilding function and replace with createRandomBlocks
 function createRandomBlocks(count = 15) {
     debugLog('Creating random blocks');
@@ -339,15 +412,15 @@ function createRandomBlocks(count = 15) {
         
         const block = new THREE.Mesh(blockGeometry, blockMaterial);
         
-        // Random position
+        // Random position - expanded for larger map
         let validPosition = false;
         let position = new THREE.Vector3();
         let attempts = 0;
         
         while (!validPosition && attempts < 50) {
             attempts++;
-            position.x = Math.random() * 40 - 20;
-            position.z = Math.random() * 40 - 20;
+            position.x = Math.random() * 90 - 45; // Expanded from 40-20 to 90-45
+            position.z = Math.random() * 90 - 45; // Expanded from 40-20 to 90-45
             
             // Keep blocks away from the center spawn area
             if (Math.abs(position.x) < 5 && Math.abs(position.z) < 5) {
@@ -405,14 +478,22 @@ function createRandomBlocks(count = 15) {
 
 function createEnvironment() {
     debugLog('Creating environment');
+    
+    // Map dimensions - 4x larger than before
+    const mapWidth = 100; // Was 50
+    const mapDepth = 100; // Was 50
+    
     // Floor
-    const floorGeometry = new THREE.PlaneGeometry(50, 50, 10, 10);
+    const floorGeometry = new THREE.PlaneGeometry(mapWidth, mapDepth, 10, 10);
     const floorMaterial = new THREE.MeshBasicMaterial({ color: 0xcccccc, side: THREE.DoubleSide });
     const floor = new THREE.Mesh(floorGeometry, floorMaterial);
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = 0;
     floor.receiveShadow = true;
     scene.add(floor);
+    
+    // Create boundary walls to prevent player from leaving the map
+    createBoundaryWalls(mapWidth, mapDepth);
 
     // Add a coordinate axis helper for debugging
     if (DEBUG) {
@@ -420,11 +501,49 @@ function createEnvironment() {
         scene.add(axesHelper);
     }
     
-    // Create random blocks instead of a central building
-    const blockBounds = createRandomBlocks(15);
+    // Create random blocks instead of a central building - more blocks for larger map
+    const blockBounds = createRandomBlocks(40); // Increased from 15 to 40
     
     // Store all building bounds for enemy spawn checking
     gameState.allBuildingBounds = blockBounds.map(b => b.box);
+}
+
+// Create boundary walls around the map
+function createBoundaryWalls(mapWidth, mapDepth) {
+    const wallHeight = 10;
+    const wallThickness = 1;
+    const wallColor = 0x888888;
+    const wallMaterial = new THREE.MeshBasicMaterial({ color: wallColor });
+    
+    // North wall
+    const northWallGeometry = new THREE.BoxGeometry(mapWidth + wallThickness*2, wallHeight, wallThickness);
+    const northWall = new THREE.Mesh(northWallGeometry, wallMaterial);
+    northWall.position.set(0, wallHeight/2, -mapDepth/2 - wallThickness/2);
+    scene.add(northWall);
+    collisionObjects.push(northWall);
+    
+    // South wall
+    const southWallGeometry = new THREE.BoxGeometry(mapWidth + wallThickness*2, wallHeight, wallThickness);
+    const southWall = new THREE.Mesh(southWallGeometry, wallMaterial);
+    southWall.position.set(0, wallHeight/2, mapDepth/2 + wallThickness/2);
+    scene.add(southWall);
+    collisionObjects.push(southWall);
+    
+    // East wall
+    const eastWallGeometry = new THREE.BoxGeometry(wallThickness, wallHeight, mapDepth + wallThickness*2);
+    const eastWall = new THREE.Mesh(eastWallGeometry, wallMaterial);
+    eastWall.position.set(mapWidth/2 + wallThickness/2, wallHeight/2, 0);
+    scene.add(eastWall);
+    collisionObjects.push(eastWall);
+    
+    // West wall
+    const westWallGeometry = new THREE.BoxGeometry(wallThickness, wallHeight, mapDepth + wallThickness*2);
+    const westWall = new THREE.Mesh(westWallGeometry, wallMaterial);
+    westWall.position.set(-mapWidth/2 - wallThickness/2, wallHeight/2, 0);
+    scene.add(westWall);
+    collisionObjects.push(westWall);
+    
+    debugLog('Created boundary walls');
 }
 
 function spawnEnemies() {
@@ -436,68 +555,35 @@ function spawnEnemies() {
     }
     
     // Calculate number of enemies based on wave level
-    // Start with 3 enemies on wave 1, then add 2 more for each wave
-    const enemyCount = 3 + ((gameState.level - 1) * 2);
+    // Start with 10 enemies on wave 1, then add 2 more for each wave
+    const enemyCount = 10 + ((gameState.level - 1) * 2);
     
-    // Create cartoon-style enemies inspired by old Mickey cartoons
-    for (let i = 0; i < enemyCount; i++) {
-        const enemy = createEnemy();
-        
-        // Generate random position
-        let validPosition = false;
-        let position = new THREE.Vector3();
-        
-        // Keep trying until we find a valid position outside all buildings
-        let attempts = 0;
-        while (!validPosition && attempts < 50) {
-            attempts++;
-            position.x = Math.random() * 30 - 15;
-            position.z = Math.random() * 30 - 15;
-            position.y = 0.8;
-            
-            // Check if position is inside any building
-            let insideAnyBuilding = false;
-            
-            if (gameState.allBuildingBounds) {
-                for (const bounds of gameState.allBuildingBounds) {
-                    if (bounds.containsPoint(position)) {
-                        // Position is inside a building, try again
-                        insideAnyBuilding = true;
-                        break;
-                    }
-                }
-            }
-            
-            if (!insideAnyBuilding) {
-                // Position is valid
-                validPosition = true;
-            }
-        }
-        
-        if (!validPosition) {
-            debugLog('Could not find valid position for enemy after 50 attempts');
-            continue; // Skip this enemy if we can't find a valid position
-        }
-        
-        enemy.position.copy(position);
-        scene.add(enemy);
-        
-        // Make enemies slower than player (player speed is 5.0)
-        // Keep speed constant across all waves
-        // const enemySpeed = 0.005 + (Math.random() * 0.005);
-        const enemySpeed = 0.01;
-        
-        enemies.push({
-            mesh: enemy,
-            health: 100,
-            speed: enemySpeed,
-            bounceOffset: Math.random() * Math.PI * 2,
-            lastPosition: position.clone(), // Track last position to detect if stuck
-            stuckTime: 0, // Track how long the enemy has been stuck
-            pathfindingOffset: new THREE.Vector3(0, 0, 0), // Offset for pathfinding
-            lastPathChange: 0 // When the path was last changed
-        });
-        debugLog(`Added enemy at ${enemy.position.x}, ${enemy.position.y}, ${enemy.position.z} with speed ${enemySpeed}`);
+    // Calculate number of spider enemies (only appear after wave 1)
+    // Start with 0 spiders in wave 1, then 2 in wave 2, and increase by 1 each wave
+    const spiderCount = gameState.level > 1 ? 2 + (gameState.level - 2) : 0;
+    
+    // Calculate number of flying enemies (only appear after wave 2)
+    // Start with 0 flyers in waves 1-2, then 1 in wave 3, and increase by 1 each wave
+    const flyingCount = gameState.level > 2 ? 1 + (gameState.level - 3) : 0;
+    
+    // Calculate regular enemy count (total minus special types)
+    const regularEnemyCount = enemyCount - spiderCount - flyingCount;
+    
+    debugLog(`Spawning ${regularEnemyCount} regular enemies, ${spiderCount} spider enemies, and ${flyingCount} flying enemies`);
+    
+    // Spawn regular enemies
+    for (let i = 0; i < regularEnemyCount; i++) {
+        spawnEnemy('regular');
+    }
+    
+    // Spawn spider enemies (after wave 1)
+    for (let i = 0; i < spiderCount; i++) {
+        spawnEnemy('spider');
+    }
+    
+    // Spawn flying enemies (after wave 2)
+    for (let i = 0; i < flyingCount; i++) {
+        spawnEnemy('flying');
     }
 }
 
@@ -548,98 +634,122 @@ function createEnemy() {
     return enemyGroup;
 }
 
+// Function to shoot
 function shoot() {
-    if (gameState.ammo <= 0) return;
+    // Check if we have ammo for the current weapon
+    if (gameState.ammo <= 0 || gameState.isReloading) return;
     
+    // Decrease ammo
     gameState.ammo--;
+    
     updateUI();
     
     // Play shoot sound
     playSound('shoot');
     
-    // Animate the weapon
-    weapon.position.z += 0.1;
-    setTimeout(() => {
-        weapon.position.z -= 0.1;
-    }, 100);
+    // Apply recoil effect
+    applyRecoil();
     
-    // Ray casting for shooting
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(new THREE.Vector2(), camera);
+    // Get bullet starting position (gun barrel)
+    const bulletStartPosition = new THREE.Vector3(0, 0, -0.5);
+    if (gameState.currentGunType === 'pistol') {
+        weapon.localToWorld(bulletStartPosition);
+    } else {
+        machineGun.localToWorld(bulletStartPosition);
+    }
     
-    // Check for enemy hits
-    const enemyMeshes = enemies.map(e => e.mesh);
-    const intersects = raycaster.intersectObjects(enemyMeshes, true);
+    // Get shooting direction from camera
+    const shootDirection = new THREE.Vector3(0, 0, -1);
+    shootDirection.applyQuaternion(camera.quaternion);
     
-    if (intersects.length > 0) {
-        const hitObject = intersects[0].object;
-        
-        // Check if we hit an enemy
-        for (let i = 0; i < enemies.length; i++) {
-            if (enemies[i].mesh.children.includes(hitObject) || enemies[i].mesh === hitObject) {
-                enemies[i].health -= 50;
-                
-                // Play enemy hit sound
-                playSound('enemyHit');
-                
-                // Visual feedback for hit
-                hitObject.material.color.set(0xff0000);
-                setTimeout(() => {
-                    if (hitObject.material) {
-                        hitObject.material.color.set(0x000000);
-                    }
-                }, 100);
-                
-                // Check if enemy is defeated
-                if (enemies[i].health <= 0) {
-                    // Play enemy death sound
-                    playSound('enemyDeath');
-                    
-                    // Store enemy position before removing it
-                    const enemyPosition = enemies[i].mesh.position.clone();
-                    
-                    // Remove enemy from scene
-                    scene.remove(enemies[i].mesh);
-                    enemies.splice(i, 1);
-                    gameState.score += 100;
-                    updateUI();
-                    
-                    // Random drop chance
-                    const dropRoll = Math.random();
-                    if (dropRoll < 0.3) {
-                        // 30% chance to drop health
-                        bulletPickups.push(createHealthPickup(enemyPosition));
-                        debugLog('Enemy dropped health');
-                    } else if (dropRoll < 0.6) {
-                        // 30% chance to drop bullets
-                        bulletPickups.push(createBulletDropPickup(enemyPosition));
-                        debugLog('Enemy dropped bullets');
-                    } else {
-                        // 40% chance to drop nothing
-                        debugLog('Enemy dropped nothing');
-                    }
-                    
-                    // Check if all enemies are defeated
-                    if (enemies.length === 0) {
-                        gameState.level++;
-                        gameState.ammo += 5;
-                        
-                        // Delay spawning new enemies to give player a moment to breathe
-                        setTimeout(() => {
-                            spawnEnemies();
-                        }, 2000);
-                    }
-                }
-                break;
+    // Create bullet projectile
+    const bullet = createBulletProjectile(bulletStartPosition, shootDirection);
+    
+    // Set bullet damage based on weapon type
+    if (gameState.currentGunType === 'machineGun') {
+        bullet.damage = 30; // Machine gun does less damage per bullet
+    }
+    
+    bulletProjectiles.push(bullet);
+    
+    // If using machine gun, automatically shoot again after a short delay
+    // but only if the mouse button is still being held down
+    if (gameState.currentGunType === 'machineGun' && gameState.ammo > 0 && gameState.isMouseDown && !gameState.isReloading) {
+        setTimeout(() => {
+            if (gameState.currentGunType === 'machineGun' && !gameState.gameOver && gameState.isMouseDown && !gameState.isReloading) {
+                shoot();
             }
-        }
+        }, 100); // 100ms delay between shots for machine gun
     }
 }
 
+// Apply recoil effect to the weapon and camera
+function applyRecoil() {
+    // Set recoil as active
+    gameState.recoilActive = true;
+    gameState.recoilRecovery = 0;
+    
+    // Visual recoil on the weapon
+    // Move the weapon back and up
+    weapon.position.z += 0.15;
+    weapon.position.y += 0.05;
+    weapon.rotation.x -= 0.2; // Rotate up
+    
+    // Camera recoil - add upward movement and slight random horizontal movement
+    const recoilX = (Math.random() - 0.5) * 0.01; // Small random horizontal recoil
+    const recoilY = 0.01; // Upward recoil
+    
+    // Apply recoil to camera rotation
+    camera.rotation.x -= recoilY;
+    camera.rotation.y += recoilX;
+}
+
+// Process recoil recovery in the animation loop
+function processRecoilRecovery(delta) {
+    if (!gameState.recoilActive) return;
+    
+    // Increase recovery progress
+    gameState.recoilRecovery += delta * 2; // Recover over 0.5 seconds
+    
+    // Calculate recovery factor (0 to 1)
+    const recovery = Math.min(gameState.recoilRecovery, 1);
+    
+    // Smoothly interpolate weapon back to original position
+    if (weapon.position.z > 0.3) {
+        weapon.position.z = 0.3 + (0.15 * (1 - recovery));
+    }
+    
+    if (weapon.position.y > -0.3) {
+        weapon.position.y = -0.3 + (0.05 * (1 - recovery));
+    }
+    
+    if (weapon.rotation.x < 0) {
+        weapon.rotation.x = -0.2 * (1 - recovery);
+    }
+    
+    // If recovery complete, reset recoil state
+    if (recovery >= 1) {
+        gameState.recoilActive = false;
+        
+        // Ensure weapon is back to exact original position
+        weapon.position.set(0.3, -0.3, -0.5);
+        weapon.rotation.set(0, 0, 0);
+    }
+}
+
+// Function to update UI
 function updateUI() {
     healthEl.textContent = `❤️ ${gameState.health}`;
-    ammoEl.textContent = `🔫 ${gameState.ammo}/${gameState.maxAmmo}`;
-    bulletsEl.textContent = `🔹 Bullets: ${gameState.bullets}`;
+    
+    // Show ammo and reload status
+    if (gameState.isReloading) {
+        ammoEl.textContent = `🔄 Reloading...`;
+    } else {
+        ammoEl.textContent = `🔫 ${gameState.ammo}/${gameState.maxAmmo}`;
+    }
+    
+    // Hide bullets counter since we have unlimited ammo
+    bulletsEl.style.display = 'none';
     
     // Update score display
     if (scoreDisplay) {
@@ -647,18 +757,114 @@ function updateUI() {
     }
     
     // Update inventory UI
-    document.getElementById('inv-bullets').textContent = gameState.bullets;
     document.getElementById('inv-health').textContent = gameState.health;
     document.getElementById('inv-score').textContent = gameState.score;
     document.getElementById('inv-level').textContent = gameState.level;
+    
+    // Update weapon info in inventory
+    const weaponNameEl = document.querySelector('.inventory-item:nth-child(1)');
+    if (weaponNameEl) {
+        const gunName = gameState.currentGunType === 'pistol' ? "Cartoon Blaster" : "Machine Gun";
+        weaponNameEl.textContent = `🔫 Weapon: ${gunName}`;
+    }
+    
+    // Update bullets info in inventory (hide it)
+    const bulletInventoryEl = document.querySelector('.inventory-item:nth-child(2)');
+    if (bulletInventoryEl) {
+        bulletInventoryEl.style.display = 'none';
+    }
 }
 
+// Function to interact with pickups
+function interactWithPickups() {
+    if (gameState.gameOver) return;
+    
+    const playerPosition = new THREE.Vector3();
+    camera.getWorldPosition(playerPosition);
+    
+    // Check for machine gun pickups
+    for (let i = machineGunPickups.length - 1; i >= 0; i--) {
+        const pickup = machineGunPickups[i];
+        const distance = playerPosition.distanceTo(pickup.mesh.position);
+        
+        if (distance < 2) { // Interaction range
+            // Drop current gun (pistol) and create a pickup for it
+            const dropPosition = playerPosition.clone();
+            dropPosition.y = 0.5; // Slightly above ground
+            const pistolPickup = createPistolPickup(dropPosition);
+            pistolPickups.push(pistolPickup);
+            
+            // Pick up machine gun
+            gameState.currentGunType = 'machineGun';
+            gameState.ammo = gameState.maxAmmo = 30; // Machine gun has 30 rounds
+            
+            // Update weapon visibility
+            weapon.visible = false;
+            machineGun.visible = true;
+            
+            // Mark pickup as inactive before removing it
+            pickup.isActive = false;
+            
+            // Remove pickup
+            scene.remove(pickup.mesh);
+            machineGunPickups.splice(i, 1);
+            
+            // Play pickup sound
+            playSound('pickupBullets');
+            
+            // Show notification
+            showNotification("Machine Gun acquired!");
+            
+            updateUI();
+            return; // Exit after picking up
+        }
+    }
+    
+    // Check for pistol pickups
+    for (let i = pistolPickups.length - 1; i >= 0; i--) {
+        const pickup = pistolPickups[i];
+        const distance = playerPosition.distanceTo(pickup.mesh.position);
+        
+        if (distance < 2) { // Interaction range
+            // Drop current gun (machine gun) and create a pickup for it
+            const dropPosition = playerPosition.clone();
+            dropPosition.y = 0.5; // Slightly above ground
+            const machineGunPickup = createMachineGunPickup(dropPosition);
+            machineGunPickups.push(machineGunPickup);
+            
+            // Pick up pistol
+            gameState.currentGunType = 'pistol';
+            gameState.ammo = gameState.maxAmmo = 10; // Pistol has 10 rounds
+            
+            // Update weapon visibility
+            weapon.visible = true;
+            machineGun.visible = false;
+            
+            // Mark pickup as inactive before removing it
+            pickup.isActive = false;
+            
+            // Remove pickup
+            scene.remove(pickup.mesh);
+            pistolPickups.splice(i, 1);
+            
+            // Play pickup sound
+            playSound('pickupBullets');
+            
+            // Show notification
+            showNotification("Pistol acquired!");
+            
+            updateUI();
+            return; // Exit after picking up
+        }
+    }
+}
+
+// Function to restart game
 function restartGame() {
     gameState = {
         health: 100,
         ammo: 10,
         maxAmmo: 10,
-        bullets: 30,
         level: 1,
         score: 0,
         gameOver: false,
@@ -666,7 +872,12 @@ function restartGame() {
         soundEnabled: gameState.soundEnabled, // Preserve sound setting
         brokenWindows: [], // Reset broken windows
         lastHitTime: 0, // Reset last hit time
-        showingRoundMessage: false // Reset round message tracking
+        showingRoundMessage: false, // Reset round message tracking
+        recoilActive: false, // Reset recoil state
+        recoilRecovery: 0, // Reset recoil recovery progress
+        currentGunType: 'pistol', // Reset to default pistol
+        isReloading: false, // Reset reloading state
+        isMouseDown: false // Reset mouse button state
     };
     
     // Remove all enemies
@@ -681,291 +892,35 @@ function restartGame() {
     }
     bulletPickups.length = 0;
     
+    // Remove all machine gun pickups
+    for (const pickup of machineGunPickups) {
+        pickup.isActive = false; // Mark as inactive to stop animations
+        scene.remove(pickup.mesh);
+    }
+    machineGunPickups.length = 0;
+    
+    // Remove all pistol pickups
+    for (const pickup of pistolPickups) {
+        pickup.isActive = false; // Mark as inactive to stop animations
+        scene.remove(pickup.mesh);
+    }
+    pistolPickups.length = 0;
+    
     // Reset player position
     camera.position.set(0, 1.6, 0);
     velocity.set(0, 0, 0);
     
+    // Reset weapon visibility
+    weapon.visible = true;
+    machineGun.visible = false;
+    
     // Spawn new enemies and pickups
     spawnEnemies();
-    spawnBulletPickups();
     
     // Update UI
     updateUI();
     gameOverEl.style.display = 'none';
     inventoryEl.style.display = 'none';
-}
-
-function checkGameOver() {
-    if (gameState.health <= 0 && !gameState.gameOver) {
-        gameState.gameOver = true;
-        
-        // Update game over screen with score and level
-        const gameOverEl = document.getElementById('gameOver');
-        const scoreEl = document.getElementById('finalScore');
-        const levelEl = document.getElementById('finalLevel');
-        
-        if (scoreEl) scoreEl.textContent = gameState.score;
-        if (levelEl) levelEl.textContent = gameState.level;
-        
-        gameOverEl.style.display = 'block';
-        controls.unlock();
-    }
-}
-
-// Animation loop
-function animate() {
-    requestAnimationFrame(animate);
-    
-    if (controls.isLocked && !gameState.gameOver && !gameState.showInventory) {
-        const time = performance.now();
-        const delta = (time - prevTime) / 1000;
-        
-        // Apply gravity
-        velocity.y -= gravity * delta;
-        
-        // Handle movement
-        const direction = new THREE.Vector3();
-        direction.z = Number(moveForward) - Number(moveBackward);
-        direction.x = Number(moveRight) - Number(moveLeft);
-        direction.normalize();
-        
-        if (moveForward || moveBackward) velocity.z = direction.z * 5.0;
-        else velocity.z = 0;
-        
-        if (moveLeft || moveRight) velocity.x = direction.x * 5.0;
-        else velocity.x = 0;
-        
-        // Store original position for collision detection
-        const originalPosition = camera.position.clone();
-        
-        // Update controls
-        controls.moveRight(velocity.x * delta);
-        controls.moveForward(velocity.z * delta);
-        
-        // Check for collisions with buildings
-        const playerRadius = 0.5; // Player collision radius
-        let collision = false;
-        
-        for (const object of collisionObjects) {
-            // Create a bounding box for the object
-            const objectBox = new THREE.Box3().setFromObject(object);
-            
-            // Create a sphere for the player
-            const playerSphere = new THREE.Sphere(camera.position, playerRadius);
-            
-            // Check for collision
-            if (objectBox.intersectsSphere(playerSphere)) {
-                collision = true;
-                break;
-            }
-        }
-        
-        // If collision detected, revert to original position
-        if (collision) {
-            camera.position.copy(originalPosition);
-        }
-        
-        // Simple collision detection with ground
-        if (camera.position.y < 1.6) {
-            velocity.y = 0;
-            camera.position.y = 1.6;
-            canJump = true;
-        } else {
-            camera.position.y += velocity.y * delta;
-        }
-        
-        // Check for bullet pickup collisions
-        const playerPosition = new THREE.Vector3();
-        camera.getWorldPosition(playerPosition);
-        
-        for (let i = bulletPickups.length - 1; i >= 0; i--) {
-            const pickup = bulletPickups[i];
-            const distance = playerPosition.distanceTo(pickup.mesh.position);
-            
-            // Remove pickups that have been around for more than 20 seconds
-            if (time - pickup.timeCreated > 20000) {
-                scene.remove(pickup.mesh);
-                bulletPickups.splice(i, 1);
-                continue;
-            }
-            
-            if (distance < 1.5) { // Pickup range
-                // Handle different pickup types
-                if (pickup.type === 'bullets') {
-                    gameState.bullets += pickup.bullets;
-                    playSound('pickupBullets');
-                } else if (pickup.type === 'health') {
-                    gameState.health = Math.min(100, gameState.health + pickup.health);
-                    playSound('pickupBullets'); // Reuse bullet pickup sound for now
-                }
-                
-                scene.remove(pickup.mesh);
-                bulletPickups.splice(i, 1);
-                updateUI();
-            }
-        }
-        
-        // Update enemies
-        for (const enemy of enemies) {
-            // Calculate direction to player
-            const directionToPlayer = new THREE.Vector3();
-            directionToPlayer.subVectors(camera.position, enemy.mesh.position).normalize();
-            
-            // Store original position for collision detection
-            const originalEnemyPosition = enemy.mesh.position.clone();
-            
-            // Check if enemy is stuck by comparing current position to last position
-            const movementAmount = enemy.mesh.position.distanceTo(enemy.lastPosition);
-            if (movementAmount < 0.01) {
-                enemy.stuckTime += delta;
-            } else {
-                enemy.stuckTime = 0;
-                // Only update last position if we've moved significantly
-                if (movementAmount > 0.05) {
-                    enemy.lastPosition.copy(enemy.mesh.position);
-                }
-            }
-            
-            // Check if there's an obstacle in the direct path to the player
-            const distanceToPlayer = enemy.mesh.position.distanceTo(camera.position);
-            const rayDirection = directionToPlayer.clone();
-            
-            // Create a raycaster to check for obstacles
-            const raycaster = new THREE.Raycaster(
-                enemy.mesh.position.clone(),
-                rayDirection,
-                0,
-                Math.min(distanceToPlayer, 5) // Only check up to 5 units or distance to player
-            );
-            
-            // Check for intersections with obstacles
-            const intersections = raycaster.intersectObjects(collisionObjects);
-            const pathBlocked = intersections.length > 0;
-            
-            // Determine if we need to change path
-            const needsNewPath = (pathBlocked || enemy.stuckTime > 0.5) && 
-                                (time - enemy.lastPathChange > 1000);
-            
-            if (needsNewPath) {
-                // Try to find a better path around obstacles
-                const possibleDirections = [];
-                
-                // Try 8 different directions around the circle
-                for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
-                    const testDirection = new THREE.Vector3(
-                        Math.sin(angle),
-                        0,
-                        Math.cos(angle)
-                    );
-                    
-                    // Create a test raycaster
-                    const testRaycaster = new THREE.Raycaster(
-                        enemy.mesh.position.clone(),
-                        testDirection,
-                        0,
-                        2 // Check 2 units ahead
-                    );
-                    
-                    // Check if this direction is clear
-                    const testIntersections = testRaycaster.intersectObjects(collisionObjects);
-                    
-                    if (testIntersections.length === 0) {
-                        // This direction is clear, score it based on how close it is to the player direction
-                        const dotProduct = testDirection.dot(directionToPlayer);
-                        possibleDirections.push({
-                            direction: testDirection,
-                            score: dotProduct // Higher score means closer to player direction
-                        });
-                    }
-                }
-                
-                // Sort directions by score (highest first)
-                possibleDirections.sort((a, b) => b.score - a.score);
-                
-                if (possibleDirections.length > 0) {
-                    // Choose the best direction (closest to player that's not blocked)
-                    enemy.pathfindingOffset = possibleDirections[0].direction.clone();
-                    enemy.pathfindingOffset.sub(directionToPlayer);
-                    enemy.lastPathChange = time;
-                    debugLog('Enemy found new path around obstacle');
-                } else {
-                    // All directions are blocked, try a random direction
-                    const randomAngle = Math.random() * Math.PI * 2;
-                    const randomDirection = new THREE.Vector3(
-                        Math.sin(randomAngle),
-                        0,
-                        Math.cos(randomAngle)
-                    );
-                    
-                    enemy.pathfindingOffset = randomDirection.clone();
-                    enemy.pathfindingOffset.sub(directionToPlayer);
-                    enemy.lastPathChange = time;
-                    debugLog('Enemy trying random direction - all paths blocked');
-                }
-            }
-            
-            // Gradually reduce pathfinding offset over time if we're not stuck
-            if (enemy.stuckTime < 0.1 && time - enemy.lastPathChange > 2000) {
-                enemy.pathfindingOffset.multiplyScalar(0.95);
-            }
-            
-            // Calculate final movement direction with pathfinding offset
-            const finalDirection = new THREE.Vector3()
-                .addVectors(directionToPlayer, enemy.pathfindingOffset)
-                .normalize();
-            
-            // Move enemy towards player with pathfinding
-            const newPosition = enemy.mesh.position.clone();
-            newPosition.x += finalDirection.x * enemy.speed;
-            newPosition.z += finalDirection.z * enemy.speed;
-            
-            // Check for collisions with buildings
-            let enemyCollision = false;
-            const enemyRadius = 0.5; // Enemy collision radius
-            
-            // Temporarily update position to check collision
-            enemy.mesh.position.copy(newPosition);
-            
-            for (const object of collisionObjects) {
-                // Create a bounding box for the object
-                const objectBox = new THREE.Box3().setFromObject(object);
-                
-                // Create a sphere for the enemy
-                const enemySphere = new THREE.Sphere(enemy.mesh.position, enemyRadius);
-                
-                // Check for collision
-                if (objectBox.intersectsSphere(enemySphere)) {
-                    enemyCollision = true;
-                    break;
-                }
-            }
-            
-            // If collision detected, revert to original position
-            if (enemyCollision) {
-                enemy.mesh.position.copy(originalEnemyPosition);
-                
-                // Increase stuck time when collision occurs
-                enemy.stuckTime += delta * 2; // Double the stuck time on collision
-            }
-            
-            // Bouncy cartoon animation
-            enemy.mesh.position.y = 0.8 + Math.sin(time * 0.005 + enemy.bounceOffset) * 0.1;
-            
-            // Rotate enemy to face player
-            enemy.mesh.lookAt(camera.position);
-            
-            // Check if enemy is close to player
-            if (distanceToPlayer < 1.5) {
-                // Use the new damage function instead of directly modifying health
-                playerTakeDamage(1, enemy.mesh.position);
-            }
-        }
-        
-        prevTime = time;
-    }
-    
-    renderer.render(scene, camera);
-    checkGameOver();
 }
 
 // Check for WebGL support - improved detection
@@ -1069,24 +1024,38 @@ function spawnBulletPickups(count = 5) {
 
 // Reload function
 function reload() {
-    if (gameState.ammo < gameState.maxAmmo && gameState.bullets > 0) {
-        const bulletsNeeded = gameState.maxAmmo - gameState.ammo;
-        const bulletsToLoad = Math.min(bulletsNeeded, gameState.bullets);
-        
-        gameState.ammo += bulletsToLoad;
-        gameState.bullets -= bulletsToLoad;
-        
-        // Animation for reloading
+    if (gameState.ammo === gameState.maxAmmo || gameState.isReloading) return;
+    
+    // Set reloading state
+    gameState.isReloading = true;
+    
+    // Animation for reloading
+    if (gameState.currentGunType === 'pistol') {
         weapon.rotation.x = 0.5;
         setTimeout(() => {
             weapon.rotation.x = 0;
         }, 300);
-        
-        // Play reload sound
-        playSound('reload');
-        
-        updateUI();
+    } else {
+        machineGun.rotation.x = 0.5;
+        setTimeout(() => {
+            machineGun.rotation.x = 0;
+        }, 300);
     }
+    
+    // Play reload sound
+    playSound('reload');
+    
+    // Reload time depends on gun type
+    const reloadTime = gameState.currentGunType === 'pistol' ? 1000 : 2000;
+    
+    // After reload time, refill ammo
+    setTimeout(() => {
+        gameState.ammo = gameState.maxAmmo;
+        gameState.isReloading = false;
+        updateUI();
+    }, reloadTime);
+    
+    updateUI();
 }
 
 // Create fist for melee attack
@@ -1464,6 +1433,12 @@ function init() {
     roundNotification = createRoundNotification();
     scoreDisplay = createScoreDisplay();
     
+    // Create weapons
+    weapon = createWeapon();
+    machineGun = createMachineGun();
+    camera.add(weapon);
+    camera.add(machineGun);
+    
     // Update UI after elements are initialized
     updateUI();
     
@@ -1519,4 +1494,934 @@ function createBulletDropPickup(position) {
         bullets: 5, // Each enemy drop gives 5 bullets
         timeCreated: performance.now()
     };
+}
+
+// Create a bullet projectile
+function createBulletProjectile(position, direction) {
+    // Create bullet geometry and material
+    const bulletGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+    const bulletMaterial = new THREE.MeshBasicMaterial({ color: 0xFFFF00 }); // Bright yellow bullet
+    const bullet = new THREE.Mesh(bulletGeometry, bulletMaterial);
+    
+    // Set initial position (at gun barrel)
+    bullet.position.copy(position);
+    
+    // Add to scene
+    scene.add(bullet);
+    
+    // Add trail effect
+    const trailGeometry = new THREE.CylinderGeometry(0.01, 0.01, 0.2, 8);
+    const trailMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xFFFF00,
+        transparent: true,
+        opacity: 0.7
+    });
+    const trail = new THREE.Mesh(trailGeometry, trailMaterial);
+    trail.rotation.x = Math.PI / 2;
+    trail.position.z = 0.1; // Position behind the bullet
+    bullet.add(trail);
+    
+    // Return bullet object with metadata
+    return {
+        mesh: bullet,
+        direction: direction.clone(),
+        speed: 20, // Units per second
+        distance: 0,
+        maxDistance: 100, // Maximum travel distance
+        damage: 50,
+        timeCreated: performance.now()
+    };
+}
+
+// Update bullet projectiles
+function updateBulletProjectiles(delta) {
+    // Update each bullet's position
+    for (let i = bulletProjectiles.length - 1; i >= 0; i--) {
+        const bullet = bulletProjectiles[i];
+        
+        // Move bullet forward
+        const moveDistance = bullet.speed * delta;
+        bullet.mesh.position.x += bullet.direction.x * moveDistance;
+        bullet.mesh.position.y += bullet.direction.y * moveDistance;
+        bullet.mesh.position.z += bullet.direction.z * moveDistance;
+        
+        // Update total distance traveled
+        bullet.distance += moveDistance;
+        
+        // Check for collisions with objects
+        const bulletPosition = bullet.mesh.position.clone();
+        
+        // Check for collisions with enemies
+        let hitEnemy = false;
+        for (let j = 0; j < enemies.length; j++) {
+            const enemy = enemies[j];
+            const distance = bulletPosition.distanceTo(enemy.mesh.position);
+            
+            // If bullet hits enemy (using a simple distance check)
+            if (distance < 0.8) { // Enemy hit radius
+                hitEnemy = true;
+                
+                // Damage enemy
+                enemy.health -= bullet.damage;
+                
+                // Play enemy hit sound
+                playSound('enemyHit');
+                
+                // Visual feedback for hit
+                enemy.mesh.children.forEach(part => {
+                    if (part.material) {
+                        part.material.color.set(0xff0000);
+                        setTimeout(() => {
+                            if (part.material) {
+                                part.material.color.set(0x000000);
+                            }
+                        }, 100);
+                    }
+                });
+                
+                // Check if enemy is defeated
+                if (enemy.health <= 0) {
+                    // Play enemy death sound
+                    playSound('enemyDeath');
+                    
+                    // Store enemy position before removing it
+                    const enemyPosition = enemy.mesh.position.clone();
+                    
+                    // Remove enemy from scene
+                    scene.remove(enemy.mesh);
+                    enemies.splice(j, 1);
+                    gameState.score += 100;
+                    updateUI();
+                    
+                    // Random drop chance
+                    const dropRoll = Math.random();
+                    if (dropRoll < 0.2) {
+                        // 20% chance to drop health
+                        bulletPickups.push(createHealthPickup(enemyPosition));
+                        debugLog('Enemy dropped health');
+                    } else if (dropRoll < 0.4) {
+                        // 20% chance to drop bullets
+                        bulletPickups.push(createBulletDropPickup(enemyPosition));
+                        debugLog('Enemy dropped bullets');
+                    } else if (dropRoll < 0.55 && !gameState.hasMachineGun) {
+                        // 15% chance to drop machine gun (only if player doesn't have one)
+                        machineGunPickups.push(createMachineGunPickup(enemyPosition));
+                        debugLog('Enemy dropped machine gun');
+                    } else {
+                        // 45-65% chance to drop nothing
+                        debugLog('Enemy dropped nothing');
+                    }
+                    
+                    // Check if all enemies are defeated
+                    if (enemies.length === 0) {
+                        gameState.level++;
+                        gameState.ammo += 5;
+                        
+                        // Delay spawning new enemies to give player a moment to breathe
+                        setTimeout(() => {
+                            spawnEnemies();
+                        }, 2000);
+                    }
+                }
+                
+                // Remove bullet after hitting enemy
+                scene.remove(bullet.mesh);
+                bulletProjectiles.splice(i, 1);
+                break;
+            }
+        }
+        
+        // Skip further checks if bullet already hit an enemy
+        if (hitEnemy) continue;
+        
+        // Check for collisions with environment
+        const raycaster = new THREE.Raycaster(
+            bulletPosition.clone().sub(bullet.direction.clone().multiplyScalar(0.1)), // Start slightly behind current position
+            bullet.direction.clone(),
+            0,
+            0.2 // Check a short distance ahead
+        );
+        
+        const intersects = raycaster.intersectObjects(collisionObjects);
+        if (intersects.length > 0) {
+            // Bullet hit environment
+            
+            // Create impact effect
+            createBulletImpact(bulletPosition, bullet.direction);
+            
+            // Remove bullet
+            scene.remove(bullet.mesh);
+            bulletProjectiles.splice(i, 1);
+            continue;
+        }
+        
+        // Remove bullet if it's traveled too far or existed too long (5 seconds)
+        if (bullet.distance > bullet.maxDistance || performance.now() - bullet.timeCreated > 5000) {
+            scene.remove(bullet.mesh);
+            bulletProjectiles.splice(i, 1);
+        }
+    }
+}
+
+// Create bullet impact effect
+function createBulletImpact(position, direction) {
+    // Create impact particles
+    const particleCount = 5;
+    const particles = [];
+    
+    for (let i = 0; i < particleCount; i++) {
+        const particleGeometry = new THREE.SphereGeometry(0.02, 4, 4);
+        const particleMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0xFFFF00,
+            transparent: true,
+            opacity: 0.8
+        });
+        const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+        
+        // Position at impact point
+        particle.position.copy(position);
+        
+        // Random direction away from impact
+        const particleDir = new THREE.Vector3(
+            (Math.random() - 0.5) * 2,
+            (Math.random() - 0.5) * 2,
+            (Math.random() - 0.5) * 2
+        );
+        particleDir.normalize();
+        
+        // Add to scene
+        scene.add(particle);
+        
+        particles.push({
+            mesh: particle,
+            direction: particleDir,
+            speed: Math.random() * 2 + 1,
+            timeCreated: performance.now()
+        });
+    }
+    
+    // Remove particles after a short time
+    setTimeout(() => {
+        particles.forEach(particle => {
+            scene.remove(particle.mesh);
+        });
+    }, 300);
+}
+
+// Create a spider enemy (faster enemy type)
+function createSpiderEnemy() {
+    // Create a spider-like enemy group
+    const enemyGroup = new THREE.Group();
+    
+    // Body - smaller and darker than regular enemies
+    const bodyGeometry = new THREE.SphereGeometry(0.4, 16, 16);
+    const bodyMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 }); // Darker color
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    
+    // Head - small bump on top
+    const headGeometry = new THREE.SphereGeometry(0.2, 16, 16);
+    const headMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
+    const head = new THREE.Mesh(headGeometry, headMaterial);
+    head.position.y = 0.3;
+    head.position.z = 0.2;
+    
+    // Eyes - red glowing eyes
+    const eyeGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+    const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    
+    const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    leftEye.position.set(-0.1, 0.35, 0.35);
+    
+    const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    rightEye.position.set(0.1, 0.35, 0.35);
+    
+    // Legs - 8 spider legs
+    const legGeometry = new THREE.CylinderGeometry(0.03, 0.01, 0.5, 8);
+    const legMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
+    
+    // Create 8 legs in a circular pattern
+    for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2;
+        const legPivot = new THREE.Group();
+        
+        const leg = new THREE.Mesh(legGeometry, legMaterial);
+        leg.rotation.x = Math.PI / 2;
+        leg.position.y = -0.25; // Position at bottom of leg
+        
+        legPivot.add(leg);
+        legPivot.position.set(
+            Math.sin(angle) * 0.3, // X position
+            -0.1,                  // Y position (slightly below body)
+            Math.cos(angle) * 0.3  // Z position
+        );
+        
+        // Rotate leg outward
+        legPivot.rotation.y = angle;
+        legPivot.rotation.x = Math.PI / 4; // Angle legs downward
+        
+        enemyGroup.add(legPivot);
+    }
+    
+    enemyGroup.add(body);
+    enemyGroup.add(head);
+    enemyGroup.add(leftEye);
+    enemyGroup.add(rightEye);
+    
+    return enemyGroup;
+}
+
+// Create a flying enemy (ghost/bird type)
+function createFlyingEnemy() {
+    // Create a flying ghost/bird enemy group
+    const enemyGroup = new THREE.Group();
+    
+    // Body - ghost-like shape
+    const bodyGeometry = new THREE.SphereGeometry(0.4, 16, 16);
+    // Stretch the bottom to create a ghost-like tail
+    for (let i = 0; i < bodyGeometry.attributes.position.count; i++) {
+        const y = bodyGeometry.attributes.position.getY(i);
+        if (y < 0) {
+            // Stretch points below the center downward
+            bodyGeometry.attributes.position.setY(
+                i, 
+                y * (1.0 - y * 0.8) // Stretch more as we go down
+            );
+        }
+    }
+    bodyGeometry.computeVertexNormals(); // Recalculate normals
+    
+    // Ghost-like white material
+    const bodyMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xFFFFFF,
+        transparent: true,
+        opacity: 0.8
+    });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    
+    // Eyes - classic cartoon eyes
+    const eyeGeometry = new THREE.CircleGeometry(0.08, 16);
+    const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    
+    const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    leftEye.position.set(-0.15, 0.1, 0.35);
+    leftEye.rotation.y = Math.PI;
+    
+    const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    rightEye.position.set(0.15, 0.1, 0.35);
+    rightEye.rotation.y = Math.PI;
+    
+    // Add cartoon mouth - simple curved line
+    const mouthGeometry = new THREE.TorusGeometry(0.1, 0.02, 8, 8, Math.PI);
+    const mouthMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    const mouth = new THREE.Mesh(mouthGeometry, mouthMaterial);
+    mouth.position.set(0, -0.05, 0.35);
+    mouth.rotation.x = Math.PI / 2;
+    
+    // Add ghostly arms/wings
+    const wingGeometry = new THREE.SphereGeometry(0.25, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+    wingGeometry.scale(1, 0.5, 1);
+    const wingMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xFFFFFF,
+        transparent: true,
+        opacity: 0.6,
+        side: THREE.DoubleSide
+    });
+    
+    // Left wing
+    const leftWing = new THREE.Mesh(wingGeometry, wingMaterial);
+    leftWing.position.set(-0.4, 0, 0);
+    leftWing.rotation.z = Math.PI / 4;
+    leftWing.rotation.y = -Math.PI / 4;
+    
+    // Right wing
+    const rightWing = new THREE.Mesh(wingGeometry, wingMaterial);
+    rightWing.position.set(0.4, 0, 0);
+    rightWing.rotation.z = -Math.PI / 4;
+    rightWing.rotation.y = Math.PI / 4;
+    
+    // Add all parts to the group
+    enemyGroup.add(body);
+    enemyGroup.add(leftEye);
+    enemyGroup.add(rightEye);
+    enemyGroup.add(mouth);
+    enemyGroup.add(leftWing);
+    enemyGroup.add(rightWing);
+    
+    // Store wing references for animation
+    enemyGroup.userData = {
+        wings: [leftWing, rightWing],
+        wingPhase: Math.random() * Math.PI * 2, // Random starting phase
+        floatPhase: Math.random() * Math.PI * 2 // For floating motion
+    };
+    
+    return enemyGroup;
+}
+
+// Helper function to spawn a single enemy of specified type
+function spawnEnemy(type) {
+    // Create enemy based on type
+    let enemy;
+    switch (type) {
+        case 'spider':
+            enemy = createSpiderEnemy();
+            break;
+        case 'flying':
+            enemy = createFlyingEnemy();
+            break;
+        default:
+            enemy = createEnemy();
+            break;
+    }
+    
+    // Generate random position
+    let validPosition = false;
+    let position = new THREE.Vector3();
+    
+    // Keep trying until we find a valid position outside all buildings
+    let attempts = 0;
+    while (!validPosition && attempts < 50) {
+        attempts++;
+        position.x = Math.random() * 90 - 45; // Expanded from 30-15 to 90-45
+        position.z = Math.random() * 90 - 45; // Expanded from 30-15 to 90-45
+        
+        // Flying enemies start higher up
+        position.y = type === 'flying' ? 3 + Math.random() * 2 : 0.8;
+        
+        // Check if position is inside any building
+        let insideAnyBuilding = false;
+        
+        if (gameState.allBuildingBounds) {
+            for (const bounds of gameState.allBuildingBounds) {
+                if (bounds.containsPoint(position)) {
+                    // Position is inside a building, try again
+                    insideAnyBuilding = true;
+                    break;
+                }
+            }
+        }
+        
+        if (!insideAnyBuilding) {
+            // Position is valid
+            validPosition = true;
+        }
+    }
+    
+    if (!validPosition) {
+        debugLog(`Could not find valid position for ${type} enemy after 50 attempts`);
+        return; // Skip this enemy if we can't find a valid position
+    }
+    
+    enemy.position.copy(position);
+    scene.add(enemy);
+    
+    // Set enemy properties based on type
+    let baseSpeed, health, bounceAmount, flyHeight;
+    
+    switch (type) {
+        case 'spider':
+            baseSpeed = 0.018; // Spiders are faster
+            health = 75; // Spiders have less health
+            bounceAmount = 0.05; // Spiders bounce less
+            flyHeight = 0; // Spiders don't fly
+            break;
+        case 'flying':
+            baseSpeed = 0.022; // Flying enemies are fast but slightly slower than before
+            health = 60; // Flying enemies have less health but more than before
+            bounceAmount = 0.1; // Less bounce for smoother ghost movement
+            flyHeight = 2.5 + Math.random(); // Flying enemies stay in the air but lower
+            break;
+        default: // Regular enemies
+            baseSpeed = 0.01;
+            health = 100;
+            bounceAmount = 0.1;
+            flyHeight = 0;
+            break;
+    }
+    
+    enemies.push({
+        mesh: enemy,
+        health: health,
+        speed: baseSpeed,
+        bounceOffset: Math.random() * Math.PI * 2,
+        lastPosition: position.clone(), // Track last position to detect if stuck
+        stuckTime: 0, // Track how long the enemy has been stuck
+        pathfindingOffset: new THREE.Vector3(0, 0, 0), // Offset for pathfinding
+        lastPathChange: 0, // When the path was last changed
+        type: type, // Store enemy type
+        bounceAmount: bounceAmount, // Store bounce amount
+        flyHeight: flyHeight, // Store flying height
+        wingPhase: Math.random() * Math.PI * 2, // For wing animation
+        floatPhase: Math.random() * Math.PI * 2 // For floating motion
+    });
+    
+    debugLog(`Added ${type} enemy at ${position.x}, ${position.y}, ${position.z} with speed ${baseSpeed}`);
+}
+
+// Create a machine gun pickup
+function createMachineGunPickup(position) {
+    const gunGeometry = new THREE.BoxGeometry(0.2, 0.2, 0.5);
+    const gunMaterial = new THREE.MeshBasicMaterial({ color: 0x555555 });
+    const gunMesh = new THREE.Mesh(gunGeometry, gunMaterial);
+    
+    // Add magazine to make it look like a machine gun
+    const magazineGeometry = new THREE.BoxGeometry(0.1, 0.2, 0.1);
+    const magazineMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
+    const magazine = new THREE.Mesh(magazineGeometry, magazineMaterial);
+    magazine.position.y = -0.15;
+    gunMesh.add(magazine);
+    
+    // Position at the enemy's location
+    gunMesh.position.copy(position);
+    gunMesh.position.y = 0.5; // Slightly above ground
+    
+    // Add to scene
+    scene.add(gunMesh);
+    
+    // Create pickup object
+    const pickup = {
+        mesh: gunMesh,
+        type: 'machineGun',
+        timeCreated: performance.now(),
+        isActive: true // Flag to track if pickup is still active
+    };
+    
+    // Add floating animation
+    const floatAnimation = () => {
+        if (!pickup.isActive) return; // Stop animation if pickup is no longer active
+        
+        gunMesh.position.y = 0.5 + Math.sin(performance.now() * 0.002) * 0.1;
+        gunMesh.rotation.y += 0.01;
+        
+        requestAnimationFrame(floatAnimation);
+    };
+    
+    // Start the animation
+    floatAnimation();
+    
+    return pickup;
+}
+
+// Function to switch weapons
+function switchWeapon(weaponNumber) {
+    // Convert weaponNumber to gun type
+    const gunType = weaponNumber === 1 ? 'pistol' : 'machineGun';
+    
+    // Don't switch if we're trying to switch to a gun we don't have
+    if (gunType !== gameState.currentGunType) {
+        // Can't switch to machine gun if we don't have it
+        if (gunType === 'machineGun' && gameState.currentGunType !== 'machineGun') {
+            showNotification("You don't have a Machine Gun!");
+            return;
+        }
+    }
+    
+    gameState.currentGunType = gunType;
+    
+    // Update weapon visibility
+    if (gunType === 'pistol') {
+        weapon.visible = true;
+        machineGun.visible = false;
+    } else {
+        weapon.visible = false;
+        machineGun.visible = true;
+    }
+    
+    updateUI();
+}
+
+// Show notification function
+function showNotification(message) {
+    // Create notification element if it doesn't exist
+    let notificationEl = document.getElementById('notification');
+    if (!notificationEl) {
+        notificationEl = document.createElement('div');
+        notificationEl.id = 'notification';
+        notificationEl.style.position = 'absolute';
+        notificationEl.style.top = '20%';
+        notificationEl.style.left = '50%';
+        notificationEl.style.transform = 'translate(-50%, -50%)';
+        notificationEl.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        notificationEl.style.color = 'white';
+        notificationEl.style.padding = '10px 20px';
+        notificationEl.style.borderRadius = '5px';
+        notificationEl.style.fontFamily = 'Arial, sans-serif';
+        notificationEl.style.fontSize = '18px';
+        notificationEl.style.textAlign = 'center';
+        notificationEl.style.zIndex = '1000';
+        notificationEl.style.display = 'none';
+        document.body.appendChild(notificationEl);
+    }
+    
+    // Set message and show notification
+    notificationEl.textContent = message;
+    notificationEl.style.display = 'block';
+    
+    // Hide after 3 seconds
+    setTimeout(() => {
+        notificationEl.style.display = 'none';
+    }, 3000);
+}
+
+// Create a pistol pickup
+function createPistolPickup(position) {
+    const gunGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.3);
+    const gunMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
+    const gunMesh = new THREE.Mesh(gunGeometry, gunMaterial);
+    
+    // Add barrel to make it look like a pistol
+    const barrelGeometry = new THREE.CylinderGeometry(0.03, 0.03, 0.4, 8);
+    const barrelMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
+    const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.z = -0.2;
+    gunMesh.add(barrel);
+    
+    // Position at the specified location
+    gunMesh.position.copy(position);
+    gunMesh.position.y = 0.5; // Slightly above ground
+    
+    // Add to scene
+    scene.add(gunMesh);
+    
+    // Create pickup object
+    const pickup = {
+        mesh: gunMesh,
+        type: 'pistol',
+        timeCreated: performance.now(),
+        isActive: true // Flag to track if pickup is still active
+    };
+    
+    // Add floating animation
+    const floatAnimation = () => {
+        if (!pickup.isActive) return; // Stop animation if pickup is no longer active
+        
+        gunMesh.position.y = 0.5 + Math.sin(performance.now() * 0.002) * 0.1;
+        gunMesh.rotation.y += 0.01;
+        
+        requestAnimationFrame(floatAnimation);
+    };
+    
+    // Start the animation
+    floatAnimation();
+    
+    // Add to pistol pickups array
+    pistolPickups.push(pickup);
+    
+    return pickup;
+}
+
+// Function to check if game is over
+function checkGameOver() {
+    if (gameState.health <= 0 && !gameState.gameOver) {
+        gameState.gameOver = true;
+        
+        // Update game over screen with score and level
+        const gameOverEl = document.getElementById('gameOver');
+        const scoreEl = document.getElementById('finalScore');
+        const levelEl = document.getElementById('finalLevel');
+        
+        if (scoreEl) scoreEl.textContent = gameState.score;
+        if (levelEl) levelEl.textContent = gameState.level;
+        
+        gameOverEl.style.display = 'block';
+        controls.unlock();
+    }
+}
+
+// Animation loop
+function animate() {
+    requestAnimationFrame(animate);
+    
+    if (controls.isLocked && !gameState.gameOver && !gameState.showInventory) {
+        const time = performance.now();
+        const delta = (time - prevTime) / 1000;
+        
+        // Process weapon recoil recovery
+        processRecoilRecovery(delta);
+        
+        // Update bullet projectiles
+        updateBulletProjectiles(delta);
+        
+        // Apply gravity
+        velocity.y -= gravity * delta;
+        
+        // Handle movement
+        const direction = new THREE.Vector3();
+        direction.z = Number(moveForward) - Number(moveBackward);
+        direction.x = Number(moveRight) - Number(moveLeft);
+        direction.normalize();
+        
+        if (moveForward || moveBackward) velocity.z = direction.z * 5.0;
+        else velocity.z = 0;
+        
+        if (moveLeft || moveRight) velocity.x = direction.x * 5.0;
+        else velocity.x = 0;
+        
+        // Store original position for collision detection
+        const originalPosition = camera.position.clone();
+        
+        // Update controls
+        controls.moveRight(velocity.x * delta);
+        controls.moveForward(velocity.z * delta);
+        
+        // Check for collisions with buildings
+        const playerRadius = 0.5; // Player collision radius
+        let collision = false;
+        
+        for (const object of collisionObjects) {
+            // Create a bounding box for the object
+            const objectBox = new THREE.Box3().setFromObject(object);
+            
+            // Create a sphere for the player
+            const playerSphere = new THREE.Sphere(camera.position, playerRadius);
+            
+            // Check for collision
+            if (objectBox.intersectsSphere(playerSphere)) {
+                collision = true;
+                break;
+            }
+        }
+        
+        // If collision detected, revert to original position
+        if (collision) {
+            camera.position.copy(originalPosition);
+        }
+        
+        // Simple collision detection with ground
+        if (camera.position.y < 1.6) {
+            velocity.y = 0;
+            camera.position.y = 1.6;
+            canJump = true;
+        } else {
+            camera.position.y += velocity.y * delta;
+        }
+        
+        // Check for bullet pickup collisions (health pickups only now)
+        const playerPosition = new THREE.Vector3();
+        camera.getWorldPosition(playerPosition);
+        
+        for (let i = bulletPickups.length - 1; i >= 0; i--) {
+            const pickup = bulletPickups[i];
+            const distance = playerPosition.distanceTo(pickup.mesh.position);
+            
+            // Remove pickups that have been around for more than 20 seconds
+            if (time - pickup.timeCreated > 20000) {
+                scene.remove(pickup.mesh);
+                bulletPickups.splice(i, 1);
+                continue;
+            }
+            
+            if (distance < 1.5) { // Pickup range
+                // Handle different pickup types
+                if (pickup.type === 'health') {
+                    gameState.health = Math.min(100, gameState.health + pickup.health);
+                    playSound('pickupBullets'); // Reuse bullet pickup sound for now
+                    
+                    scene.remove(pickup.mesh);
+                    bulletPickups.splice(i, 1);
+                    updateUI();
+                }
+            }
+        }
+        
+        // Update enemies
+        for (const enemy of enemies) {
+            // Calculate direction to player
+            const directionToPlayer = new THREE.Vector3();
+            directionToPlayer.subVectors(camera.position, enemy.mesh.position).normalize();
+            
+            // Store original position for collision detection
+            const originalEnemyPosition = enemy.mesh.position.clone();
+            
+            // Check if enemy is stuck by comparing current position to last position
+            const movementAmount = enemy.mesh.position.distanceTo(enemy.lastPosition);
+            if (movementAmount < 0.01) {
+                enemy.stuckTime += delta;
+            } else {
+                enemy.stuckTime = 0;
+                // Only update last position if we've moved significantly
+                if (movementAmount > 0.05) {
+                    enemy.lastPosition.copy(enemy.mesh.position);
+                }
+            }
+            
+            // Check if there's an obstacle in the direct path to the player
+            const distanceToPlayer = enemy.mesh.position.distanceTo(camera.position);
+            const rayDirection = directionToPlayer.clone();
+            
+            // Create a raycaster to check for obstacles
+            const raycaster = new THREE.Raycaster(
+                enemy.mesh.position.clone(),
+                rayDirection,
+                0,
+                Math.min(distanceToPlayer, 5) // Only check up to 5 units or distance to player
+            );
+            
+            // Check for intersections with obstacles
+            const intersections = raycaster.intersectObjects(collisionObjects);
+            const pathBlocked = intersections.length > 0;
+            
+            // Determine if we need to change path
+            const needsNewPath = (pathBlocked || enemy.stuckTime > 0.5) && 
+                                (time - enemy.lastPathChange > 1000);
+            
+            if (needsNewPath) {
+                // Try to find a better path around obstacles
+                const possibleDirections = [];
+                
+                // Try 8 different directions around the circle
+                for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
+                    const testDirection = new THREE.Vector3(
+                        Math.sin(angle),
+                        0,
+                        Math.cos(angle)
+                    );
+                    
+                    // Create a test raycaster
+                    const testRaycaster = new THREE.Raycaster(
+                        enemy.mesh.position.clone(),
+                        testDirection,
+                        0,
+                        2 // Check 2 units ahead
+                    );
+                    
+                    // Check if this direction is clear
+                    const testIntersections = testRaycaster.intersectObjects(collisionObjects);
+                    
+                    if (testIntersections.length === 0) {
+                        // This direction is clear, score it based on how close it is to the player direction
+                        const dotProduct = testDirection.dot(directionToPlayer);
+                        possibleDirections.push({
+                            direction: testDirection,
+                            score: dotProduct // Higher score means closer to player direction
+                        });
+                    }
+                }
+                
+                // Sort directions by score (highest first)
+                possibleDirections.sort((a, b) => b.score - a.score);
+                
+                if (possibleDirections.length > 0) {
+                    // Choose the best direction (closest to player that's not blocked)
+                    enemy.pathfindingOffset = possibleDirections[0].direction.clone();
+                    enemy.pathfindingOffset.sub(directionToPlayer);
+                    enemy.lastPathChange = time;
+                    debugLog('Enemy found new path around obstacle');
+                } else {
+                    // All directions are blocked, try a random direction
+                    const randomAngle = Math.random() * Math.PI * 2;
+                    const randomDirection = new THREE.Vector3(
+                        Math.sin(randomAngle),
+                        0,
+                        Math.cos(randomAngle)
+                    );
+                    
+                    enemy.pathfindingOffset = randomDirection.clone();
+                    enemy.pathfindingOffset.sub(directionToPlayer);
+                    enemy.lastPathChange = time;
+                    debugLog('Enemy trying random direction - all paths blocked');
+                }
+            }
+            
+            // Gradually reduce pathfinding offset over time if we're not stuck
+            if (enemy.stuckTime < 0.1 && time - enemy.lastPathChange > 2000) {
+                enemy.pathfindingOffset.multiplyScalar(0.95);
+            }
+            
+            // Calculate final movement direction with pathfinding offset
+            const finalDirection = new THREE.Vector3()
+                .addVectors(directionToPlayer, enemy.pathfindingOffset)
+                .normalize();
+            
+            // Move enemy towards player with pathfinding
+            const newPosition = enemy.mesh.position.clone();
+            newPosition.x += finalDirection.x * enemy.speed;
+            newPosition.z += finalDirection.z * enemy.speed;
+            
+            // Check for collisions with buildings
+            let enemyCollision = false;
+            const enemyRadius = 0.5; // Enemy collision radius
+            
+            // Temporarily update position to check collision
+            enemy.mesh.position.copy(newPosition);
+            
+            for (const object of collisionObjects) {
+                // Create a bounding box for the object
+                const objectBox = new THREE.Box3().setFromObject(object);
+                
+                // Create a sphere for the enemy
+                const enemySphere = new THREE.Sphere(enemy.mesh.position, enemyRadius);
+                
+                // Check for collision
+                if (objectBox.intersectsSphere(enemySphere)) {
+                    enemyCollision = true;
+                    break;
+                }
+            }
+            
+            // If collision detected, revert to original position
+            if (enemyCollision) {
+                enemy.mesh.position.copy(originalEnemyPosition);
+                
+                // Increase stuck time when collision occurs
+                enemy.stuckTime += delta * 2; // Double the stuck time on collision
+            }
+            
+            // Special handling for flying enemies
+            if (enemy.type === 'flying') {
+                // Ghost/bird floating animation
+                const floatSpeed = 2; // Floating speed
+                const floatAmount = 0.3; // How much it floats up and down
+                
+                // Calculate floating height offset
+                const floatOffset = Math.sin(time * 0.001 * floatSpeed + enemy.floatPhase) * floatAmount;
+                
+                // Apply wing animation if the enemy has wings
+                if (enemy.mesh.userData && enemy.mesh.userData.wings) {
+                    const wings = enemy.mesh.userData.wings;
+                    const wingSpeed = 3; // Slower, ghostly wing movement
+                    const wingAngle = Math.sin(time * 0.001 * wingSpeed + enemy.wingPhase) * 0.2;
+                    
+                    // Animate wings
+                    if (wings[0]) wings[0].rotation.z = Math.PI / 4 + wingAngle;
+                    if (wings[1]) wings[1].rotation.z = -Math.PI / 4 - wingAngle;
+                }
+                
+                // Flying enemies maintain height with floating motion
+                const targetHeight = enemy.flyHeight + floatOffset;
+                if (enemy.mesh.position.y < targetHeight - 0.1) {
+                    enemy.mesh.position.y += Math.min(0.05, targetHeight - enemy.mesh.position.y);
+                } else if (enemy.mesh.position.y > targetHeight + 0.1) {
+                    enemy.mesh.position.y -= Math.min(0.05, enemy.mesh.position.y - targetHeight);
+                }
+                
+                // Add ghostly rotation
+                enemy.mesh.rotation.y += Math.sin(time * 0.001) * 0.01;
+            }
+            
+            // Bouncy cartoon animation - use enemy-specific bounce amount
+            const bounceAmount = enemy.bounceAmount || 0.1; // Default to 0.1 if not specified
+            
+            // For flying enemies, make the bounce affect their height
+            if (enemy.type === 'flying') {
+                enemy.mesh.position.y += Math.sin(time * 0.005 + enemy.bounceOffset) * bounceAmount;
+            } else {
+                enemy.mesh.position.y = 0.8 + Math.sin(time * 0.005 + enemy.bounceOffset) * bounceAmount;
+            }
+            
+            // Rotate enemy to face player
+            enemy.mesh.lookAt(camera.position);
+            
+            // Check if enemy is close to player
+            if (distanceToPlayer < 1.5) {
+                // Use the damage function to apply damage to player
+                playerTakeDamage(1, enemy.mesh.position);
+            }
+        }
+        
+        prevTime = time;
+    }
+    
+    renderer.render(scene, camera);
+    checkGameOver();
 }
