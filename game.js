@@ -2058,19 +2058,19 @@ function spawnEnemy(type) {
     
     switch (type) {
         case 'spider':
-            baseSpeed = 0.018; // Spiders are faster
+            baseSpeed = 0.025; // Spiders are faster
             health = 75; // Spiders have less health
             bounceAmount = 0.05; // Spiders bounce less
             flyHeight = 0; // Spiders don't fly
             break;
         case 'flying':
-            baseSpeed = 0.022; // Flying enemies are fast but slightly slower than before
+            baseSpeed = 0.03; // Flying enemies are fast but slightly slower than before
             health = 60; // Flying enemies have less health but more than before
             bounceAmount = 0.1; // Less bounce for smoother ghost movement
             flyHeight = 2.5 + Math.random(); // Flying enemies stay in the air but lower
             break;
         default: // Regular enemies
-            baseSpeed = 0.01;
+            baseSpeed = 0.02;
             health = 100;
             bounceAmount = 0.1;
             flyHeight = 0;
