@@ -307,11 +307,8 @@ controls.addEventListener('lock', () => {
         restartGame();
     }
     
-    // If game hasn't started yet, start it when controls are locked
-    if (!gameState.gameStarted) {
-        gameState.gameStarted = true;
-        spawnEnemies();
-    }
+    // Don't automatically start the game when controls are locked
+    // The game should only start when the startGame function is called
 });
 
 controls.addEventListener('unlock', () => {
@@ -1824,21 +1821,16 @@ init();
 
 // Check if this is the first visit and show title screen if needed
 function checkFirstVisit() {
-    // Check localStorage to see if user has visited before
-    const hasVisited = localStorage.getItem('hasVisitedBefore');
+    // Always show the title screen
+    gameState.firstVisit = true;
+    gameState.gameStarted = false;
+    showTitleScreen();
     
-    if (!hasVisited) {
-        // First time visitor
-        gameState.firstVisit = true;
-        showTitleScreen();
-        
-        // Set localStorage flag for future visits
+    // Note: We're keeping the localStorage functionality for other features
+    // that might use the first visit flag, but not using it to determine
+    // whether to show the title screen
+    if (!localStorage.getItem('hasVisitedBefore')) {
         localStorage.setItem('hasVisitedBefore', 'true');
-    } else {
-        // Returning visitor
-        gameState.firstVisit = false;
-        gameState.gameStarted = true;
-        hideTitleScreen();
     }
 }
 
