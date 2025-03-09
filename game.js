@@ -3856,7 +3856,6 @@ function createShotgun() {
     
     // Position the weapon
     weaponGroup.position.set(0.3, -0.3, -0.5);
-    weaponGroup.rotation.y = Math.PI / 2;
     weaponGroup.visible = false; // Hide initially
     
     return weaponGroup;
@@ -3916,17 +3915,16 @@ function createShotgunPickup(position) {
     return pickup;
 }
 
-// Create a rocket launcher
-function createRocketLauncher() {
-    debugLog('Creating rocket launcher');
-    // Create a cartoon-style rocket launcher
-    const weaponGroup = new THREE.Group();
+// Base function to create rocket launcher model
+function createRocketLauncherModel() {
+    const modelGroup = new THREE.Group();
     
     // Main tube
     const tubeGeometry = new THREE.CylinderGeometry(0.08, 0.08, 0.7, 16);
     const tubeMaterial = new THREE.MeshBasicMaterial({ color: 0x444444 });
     const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
     tube.rotation.z = Math.PI / 2; // Rotate to horizontal position
+    modelGroup.add(tube);
     
     // End cap with opening
     const capGeometry = new THREE.CylinderGeometry(0.1, 0.1, 0.05, 16);
@@ -3934,7 +3932,8 @@ function createRocketLauncher() {
     const cap = new THREE.Mesh(capGeometry, capMaterial);
     cap.rotation.z = Math.PI / 2;
     cap.position.x = 0.35;
-    
+    modelGroup.add(cap);
+        
     // Inner tube (darker color)
     const innerGeometry = new THREE.CylinderGeometry(0.06, 0.06, 0.72, 16);
     const innerMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
@@ -3963,14 +3962,21 @@ function createRocketLauncher() {
     sight.position.y = 0.1;
     
     // Add all parts to the weapon group
-    weaponGroup.add(tube);
-    weaponGroup.add(cap);
-    weaponGroup.add(innerTube);
-    weaponGroup.add(handle);
-    weaponGroup.add(grip);
-    weaponGroup.add(sight);
+    modelGroup.add(tube);
+    modelGroup.add(cap);
+    modelGroup.add(innerTube);
+    modelGroup.add(handle);
+    modelGroup.add(grip);
+    modelGroup.add(sight);
     
-    // Position the weapon
+    return modelGroup;
+}
+
+// Create the weapon for player use
+function createRocketLauncher() {
+    const weaponGroup = createRocketLauncherModel();
+    
+    // Apply weapon-specific positioning and properties
     weaponGroup.position.set(0.3, -0.3, -0.5);
     weaponGroup.rotation.y = Math.PI / 2;
     weaponGroup.visible = false; // Hide initially
@@ -4245,31 +4251,7 @@ function createExplosion(position) {
 
 // Create a rocket launcher pickup
 function createRocketLauncherPickup(position) {
-    // Create a visual representation of the rocket launcher
-    const gunGroup = new THREE.Group();
-    
-    // Main tube
-    const tubeGeometry = new THREE.CylinderGeometry(0.08, 0.08, 0.7, 16);
-    const tubeMaterial = new THREE.MeshBasicMaterial({ color: 0x444444 });
-    const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
-    tube.rotation.z = Math.PI / 2; // Rotate to horizontal position
-    gunGroup.add(tube);
-    
-    // End cap with opening
-    const capGeometry = new THREE.CylinderGeometry(0.1, 0.1, 0.05, 16);
-    const capMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
-    const cap = new THREE.Mesh(capGeometry, capMaterial);
-    cap.rotation.z = Math.PI / 2;
-    cap.position.x = 0.35;
-    gunGroup.add(cap);
-    
-    // Handle
-    const handleGeometry = new THREE.BoxGeometry(0.15, 0.1, 0.04);
-    const handleMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
-    const handle = new THREE.Mesh(handleGeometry, handleMaterial);
-    handle.position.x = -0.2;
-    handle.position.y = -0.15;
-    gunGroup.add(handle);
+    const gunGroup = createRocketLauncherModel();
     
     // Set position
     gunGroup.position.copy(position);
@@ -4607,19 +4589,20 @@ function handleEnemyDefeat(enemy, position) {
         // 5% chance to drop health
         healthPickups.push(createHealthPickup(position.clone()));
         debugLog('Enemy dropped health');
-    } else if (dropRoll < 0.1) {
-        // 5% chance to drop machine gun
-        machineGunPickups.push(createMachineGunPickup(position.clone()));
-        debugLog('Enemy dropped machine gun');
-    } else if (dropRoll < 0.15) {
-        // 5% chance to drop sniper rifle (rare)
-        sniperRiflePickups.push(createSniperRiflePickup(position.clone()));
-        debugLog('Enemy dropped sniper rifle');
-    } else if (dropRoll < 0.2) {
-        // 5% chance to drop shotgun
-        shotgunPickups.push(createShotgunPickup(position.clone()));
-        debugLog('Enemy dropped shotgun');
-    } else if (dropRoll < 0.25) {
+    // } else if (dropRoll < 0.1) {
+    //     // 5% chance to drop machine gun
+    //     machineGunPickups.push(createMachineGunPickup(position.clone()));
+    //     debugLog('Enemy dropped machine gun');
+    // } else if (dropRoll < 0.15) {
+    //     // 5% chance to drop sniper rifle (rare)
+    //     sniperRiflePickups.push(createSniperRiflePickup(position.clone()));
+    //     debugLog('Enemy dropped sniper rifle');
+    // } else if (dropRoll < 0.2) {
+    } else if (dropRoll < 1) {
+    //     // 5% chance to drop shotgun
+    //     shotgunPickups.push(createShotgunPickup(position.clone()));
+    //     debugLog('Enemy dropped shotgun');
+    // } else if (dropRoll < 0.25) {
         // 5% chance to drop rocket launcher (very rare)
         rocketLauncherPickups.push(createRocketLauncherPickup(position.clone()));
         debugLog('Enemy dropped rocket launcher');
