@@ -1623,29 +1623,55 @@ function reload() {
     // Set reloading state
     gameState.isReloading = true;
     
-    // Animation for reloading
-    if (gameState.currentGunType === 'pistol') {
-        weapon.rotation.x = 0.5;
-        setTimeout(() => {
-            weapon.rotation.x = 0;
-        }, 300);
-    } else {
-        machineGun.rotation.x = 0.5;
-        setTimeout(() => {
-            machineGun.rotation.x = 0;
-        }, 300);
-    }
-    
     // Play reload sound
     playSound('reload');
     
     // Reload time depends on gun type
     const reloadTime = gameState.currentGunType === 'pistol' ? 1000 : 2000;
     
-    // After reload time, refill ammo
+    // Animation for reloading - set rotation for all weapons and keep until reload is complete
+    switch (gameState.currentGunType) {
+        case 'pistol':
+            weapon.rotation.x = 0.5;
+            break;
+        case 'machineGun':
+            machineGun.rotation.x = 0.5;
+            break;
+        case 'sniperRifle':
+            sniperRifle.rotation.x = 0.5;
+            break;
+        case 'shotgun':
+            shotgun.rotation.x = 0.5;
+            break;
+        case 'rocketLauncher':
+            rocketLauncher.rotation.x = 0.5;
+            break;
+    }
+    
+    // After reload time, refill ammo and reset weapon position
     setTimeout(() => {
         gameState.ammo = gameState.maxAmmo;
         gameState.isReloading = false;
+        
+        // Reset weapon rotation
+        switch (gameState.currentGunType) {
+            case 'pistol':
+                weapon.rotation.x = 0;
+                break;
+            case 'machineGun':
+                machineGun.rotation.x = 0;
+                break;
+            case 'sniperRifle':
+                sniperRifle.rotation.x = 0;
+                break;
+            case 'shotgun':
+                shotgun.rotation.x = 0;
+                break;
+            case 'rocketLauncher':
+                rocketLauncher.rotation.x = 0;
+                break;
+        }
+        
         updateUI();
     }, reloadTime);
     
