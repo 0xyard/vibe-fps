@@ -4577,16 +4577,15 @@ function handleEnemyDefeat(enemy, position) {
         // 5% chance to drop health
         healthPickups.push(createHealthPickup(position.clone()));
         debugLog('Enemy dropped health');
-    // } else if (dropRoll < 0.1) {
-    //     // 5% chance to drop machine gun
-    //     machineGunPickups.push(createMachineGunPickup(position.clone()));
-    //     debugLog('Enemy dropped machine gun');
-    // } else if (dropRoll < 0.15) {
-    //     // 5% chance to drop sniper rifle (rare)
-    //     sniperRiflePickups.push(createSniperRiflePickup(position.clone()));
-    //     debugLog('Enemy dropped sniper rifle');
-    // } else if (dropRoll < 0.2) {
-    } else if (dropRoll < 1) {
+    } else if (dropRoll < 0.1) {
+        // 5% chance to drop machine gun
+        machineGunPickups.push(createMachineGunPickup(position.clone()));
+        debugLog('Enemy dropped machine gun');
+    } else if (dropRoll < 0.15) {
+        // 5% chance to drop sniper rifle (rare)
+        sniperRiflePickups.push(createSniperRiflePickup(position.clone()));
+        debugLog('Enemy dropped sniper rifle');
+    } else if (dropRoll < 0.2) {
         // 5% chance to drop shotgun
         shotgunPickups.push(createShotgunPickup(position.clone()));
         debugLog('Enemy dropped shotgun');
