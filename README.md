@@ -1,4 +1,4 @@
-# Classic Survival FPS
+# Surviber FPS
 
 A first-person shooter endless horde game.
 
