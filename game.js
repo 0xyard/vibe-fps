@@ -45,8 +45,10 @@ const gameState = {
     foundSniperRifle: false,
     foundShotgun: false,
     foundRocketLauncher: false,
+    gameStarted: false, // Track if game has started (past title screen)
+    firstVisit: true,   // Track if this is the first visit
     soundEnabled: true, // Track if sound is enabled
-    allBuildingBounds: []
+    allBuildingBounds: [] // Store building bounds
 };
 
 // DOM elements
@@ -304,14 +306,27 @@ controls.addEventListener('lock', () => {
     if (gameState.gameOver) {
         restartGame();
     }
+    
+    // If game hasn't started yet, start it when controls are locked
+    if (!gameState.gameStarted) {
+        gameState.gameStarted = true;
+        spawnEnemies();
+    }
 });
 
 controls.addEventListener('unlock', () => {
     // Player unlocked controls
+    // Don't show menu if on title screen
+    if (gameState.gameStarted && !gameState.gameOver) {
+        toggleMenu();
+    }
 });
 
 document.addEventListener('keydown', (event) => {
     if (gameState.gameOver) return;
+    
+    // Don't process keyboard events if on title screen
+    if (!gameState.gameStarted && event.code !== 'Escape') return;
     
     // Always allow ESC key to toggle menu
     if (event.code === 'Escape') {
@@ -1766,6 +1781,9 @@ function init() {
         return;
     }
     
+    // Check if this is the first visit
+    checkFirstVisit();
+    
     // Initialize UI elements
     roundNotification = createRoundNotification();
     scoreDisplay = createScoreDisplay();
@@ -1789,15 +1807,74 @@ function init() {
         restartGame(); // Restart game
     });
     
+    // Set up title screen start button
+    document.getElementById('startGameButton').addEventListener('click', startGame);
+    
     // Update UI after elements are initialized
     updateUI();
     
-    // Spawn initial enemies
-    spawnEnemies();
+    // Only spawn enemies if game has started
+    if (gameState.gameStarted) {
+        spawnEnemies();
+    }
 }
 
 // Initialize the game
 init();
+
+// Check if this is the first visit and show title screen if needed
+function checkFirstVisit() {
+    // Check localStorage to see if user has visited before
+    const hasVisited = localStorage.getItem('hasVisitedBefore');
+    
+    if (!hasVisited) {
+        // First time visitor
+        gameState.firstVisit = true;
+        showTitleScreen();
+        
+        // Set localStorage flag for future visits
+        localStorage.setItem('hasVisitedBefore', 'true');
+    } else {
+        // Returning visitor
+        gameState.firstVisit = false;
+        gameState.gameStarted = true;
+        hideTitleScreen();
+    }
+}
+
+// Show the title screen
+function showTitleScreen() {
+    document.getElementById('titleScreen').style.display = 'flex';
+    
+    // Pause game functionality
+    gameState.gameStarted = false;
+    
+    // Lock controls
+    controls.lock = function() {
+        // Override to prevent locking while on title screen
+        return false;
+    };
+}
+
+// Hide the title screen and start the game
+function hideTitleScreen() {
+    document.getElementById('titleScreen').style.display = 'none';
+    
+    // Restore controls
+    controls.lock = PointerLockControls.prototype.lock;
+}
+
+// Start the game from title screen
+function startGame() {
+    hideTitleScreen();
+    gameState.gameStarted = true;
+    
+    // Lock controls to start the game
+    controls.lock();
+    
+    // Spawn initial enemies
+    spawnEnemies();
+}
 
 // Create a health pickup
 function createHealthPickup(position) {
@@ -2504,6 +2581,13 @@ function checkGameOver() {
 
 // Animation loop
 function animate() {
+    // Only run game logic if game has started
+    if (!gameState.gameStarted) {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+        return;
+    }
+    
     requestAnimationFrame(animate);
     
     // Calculate delta time
@@ -4615,6 +4699,9 @@ function handleEnemyDefeat(enemy, position) {
 
 // Function to toggle the menu
 function toggleMenu() {
+    // Don't toggle menu if on title screen or game not started
+    if (!gameState.gameStarted) return;
+    
     const menuScreen = document.getElementById('menuScreen');
     
     // Toggle menu state
