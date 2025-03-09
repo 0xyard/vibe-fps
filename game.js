@@ -3812,16 +3812,14 @@ function fadePickupMesh(mesh, opacity) {
 }
 
 // Create a shotgun weapon
-function createShotgun() {
-    debugLog('Creating shotgun');
-    // Create a cartoon-style shotgun
-    const weaponGroup = new THREE.Group();
+function createShotgunModel() {
+    const modelGroup = new THREE.Group();
     
-    // Main barrel - shorter and wider than other guns
+    // Main barrel
     const barrelGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8);
     const barrelMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
-    const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
-    barrel.rotation.z = Math.PI / 2; // Rotate to horizontal position
+    const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);  
+    barrel.rotation.x = Math.PI / 2;
     
     // Second barrel below the first
     const barrel2 = barrel.clone();
@@ -3831,28 +3829,39 @@ function createShotgun() {
     const stockGeometry = new THREE.BoxGeometry(0.3, 0.1, 0.08);
     const stockMaterial = new THREE.MeshBasicMaterial({ color: 0x8B4513 }); // Brown for wood
     const stock = new THREE.Mesh(stockGeometry, stockMaterial);
-    stock.position.x = -0.2;
+    stock.position.z = 0.2;
+    stock.rotation.y = Math.PI / 2;
     
     // Pump handle
     const pumpGeometry = new THREE.BoxGeometry(0.15, 0.06, 0.1);
     const pumpMaterial = new THREE.MeshBasicMaterial({ color: 0x8B4513 });
     const pump = new THREE.Mesh(pumpGeometry, pumpMaterial);
-    pump.position.x = 0.1;
     pump.position.y = -0.1;
+    pump.rotation.y = Math.PI / 2;
     
     // Trigger guard
     const guardGeometry = new THREE.BoxGeometry(0.08, 0.12, 0.04);
     const guardMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
     const guard = new THREE.Mesh(guardGeometry, guardMaterial);
-    guard.position.x = -0.05;
     guard.position.y = -0.1;
+    guard.position.z = 0.2;
+    guard.rotation.y = Math.PI / 2;
     
     // Add all parts to the weapon group
-    weaponGroup.add(barrel);
-    weaponGroup.add(barrel2);
-    weaponGroup.add(stock);
-    weaponGroup.add(pump);
-    weaponGroup.add(guard);
+    modelGroup.add(barrel);
+    modelGroup.add(barrel2);
+    modelGroup.add(stock);
+    modelGroup.add(pump);
+    modelGroup.add(guard);
+    
+    return modelGroup;
+}
+
+// Create a shotgun weapon
+function createShotgun() {
+    debugLog('Creating shotgun');
+    // Create a cartoon-style shotgun
+    const weaponGroup = createShotgunModel();
     
     // Position the weapon
     weaponGroup.position.set(0.3, -0.3, -0.5);
@@ -3863,52 +3872,31 @@ function createShotgun() {
 
 // Create a shotgun pickup
 function createShotgunPickup(position) {
-    // Create a visual representation of the shotgun
-    const gunGroup = new THREE.Group();
+    const gunGroup = createShotgunModel();
     
-    // Main barrel
-    const barrelGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8);
-    const barrelMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
-    const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
-    barrel.rotation.z = Math.PI / 2; // Rotate to horizontal position
-    
-    // Second barrel below the first
-    const barrel2 = barrel.clone();
-    barrel2.position.y = -0.06;
-    barrel.add(barrel2);
-    
-    // Stock - wooden look
-    const stockGeometry = new THREE.BoxGeometry(0.3, 0.1, 0.08);
-    const stockMaterial = new THREE.MeshBasicMaterial({ color: 0x8B4513 }); // Brown for wood
-    const stock = new THREE.Mesh(stockGeometry, stockMaterial);
-    stock.position.x = -0.2;
-    barrel.add(stock);
-    
-    // Position at the specified location
-    barrel.position.copy(position);
-    barrel.position.y = 0.5; // Slightly above ground
-    
-    // Add to scene
-    scene.add(barrel);
-    
-    // Create pickup object
-    const pickup = {
-        mesh: barrel,
-        type: 'shotgun',
-        timeCreated: performance.now(),
-        isActive: true // Flag to track if pickup is still active
-    };
+    // Set position
+    gunGroup.position.copy(position);
     
     // Add floating animation
     const floatAnimation = () => {
         if (!pickup.isActive) return; // Stop animation if pickup is no longer active
         
-        barrel.position.y = 0.5 + Math.sin(performance.now() * 0.002) * 0.1;
-        barrel.rotation.y += 0.01;
+        gunGroup.position.y = 0.5 + Math.sin(performance.now() * 0.002) * 0.1;
+        gunGroup.rotation.y += 0.01;
         
         requestAnimationFrame(floatAnimation);
     };
     
+    // Create pickup object
+    const pickup = {
+        mesh: gunGroup,
+        type: 'shotgun',
+        timeCreated: performance.now(),
+        isActive: true // Flag to track if pickup is still active
+    };
+
+    scene.add(gunGroup);
+
     // Start the animation
     floatAnimation();
     
@@ -4599,10 +4587,10 @@ function handleEnemyDefeat(enemy, position) {
     //     debugLog('Enemy dropped sniper rifle');
     // } else if (dropRoll < 0.2) {
     } else if (dropRoll < 1) {
-    //     // 5% chance to drop shotgun
-    //     shotgunPickups.push(createShotgunPickup(position.clone()));
-    //     debugLog('Enemy dropped shotgun');
-    // } else if (dropRoll < 0.25) {
+        // 5% chance to drop shotgun
+        shotgunPickups.push(createShotgunPickup(position.clone()));
+        debugLog('Enemy dropped shotgun');
+    } else if (dropRoll < 0.25) {
         // 5% chance to drop rocket launcher (very rare)
         rocketLauncherPickups.push(createRocketLauncherPickup(position.clone()));
         debugLog('Enemy dropped rocket launcher');
