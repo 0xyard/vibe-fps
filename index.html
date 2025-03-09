@@ -50,17 +50,44 @@
             font-size: 36px;
             text-align: center;
             display: none;
+            background-color: rgba(0, 0, 0, 0.85);
+            padding: 30px;
+            border-radius: 15px;
+            border: 3px solid #3a86ff;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            pointer-events: auto;
         }
-        #restartButton {
-            background: white;
-            color: black;
-            border: 2px solid black;
-            padding: 10px 20px;
-            margin-top: 20px;
-            font-size: 24px;
+        #restartButton, #submitScoreButton, #viewLeaderboardButton {
+            background: #3a86ff;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            margin-top: 15px;
+            font-size: 22px;
             cursor: pointer;
             font-family: 'Courier New', monospace;
+            border-radius: 8px;
+            font-weight: bold;
+            transition: all 0.3s;
+            box-shadow: 0 0 15px rgba(58, 134, 255, 0.5);
+            display: block;
+            width: 100%;
+            max-width: 280px;
+            margin-left: auto;
+            margin-right: auto;
             pointer-events: auto;
+        }
+        #restartButton:hover, #submitScoreButton:hover, #viewLeaderboardButton:hover {
+            background: #2667cc;
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(58, 134, 255, 0.8);
+        }
+        #submitScoreButton {
+            background: #3a86ff;
+        }
+        #viewLeaderboardButton {
+            background: #2667cc;
         }
         #bullets {
             position: absolute;
@@ -270,12 +297,12 @@
             gap: 10px;
         }
         
-        #startGameButton {
+        #startGameButton, #leaderboardButton {
             background: #3a86ff;
             color: white;
             border: none;
             padding: 15px 30px;
-            margin-top: 30px;
+            margin-top: 20px;
             font-size: 24px;
             cursor: pointer;
             font-family: 'Courier New', monospace;
@@ -283,18 +310,28 @@
             font-weight: bold;
             transition: all 0.3s;
             box-shadow: 0 0 15px rgba(58, 134, 255, 0.5);
+            display: block;
+            width: 100%;
+            max-width: 300px;
+            margin-left: auto;
+            margin-right: auto;
         }
         
-        #startGameButton:hover {
+        #startGameButton:hover, #leaderboardButton:hover {
             background: #2667cc;
             transform: scale(1.05);
             box-shadow: 0 0 20px rgba(58, 134, 255, 0.8);
         }
         
+        #leaderboardButton {
+            background: #2667cc;
+            margin-top: 15px;
+        }
+        
         /* Footer styles */
         #gameFooter {
-            position: absolute;
-            bottom: 10px;
+            position: relative;
+            top: 10px;
             width: 100%;
             text-align: center;
             color: white;
@@ -312,6 +349,63 @@
         #gameFooter a:hover {
             color: #2667cc;
             text-decoration: underline;
+        }
+        
+        .name-label {
+            font-size: 16px;
+            margin-top: 15px;
+            margin-bottom: 5px;
+            display: block;
+            color: #3a86ff;
+        }
+        
+        /* Add a container for the name input and submit button */
+        .submit-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 15px auto;
+            max-width: 400px;
+            gap: 10px;
+        }
+        
+        #playerNameInput {
+            background: rgba(255, 255, 255, 0.9);
+            border: 2px solid #3a86ff;
+            border-radius: 5px;
+            padding: 10px 15px;
+            font-size: 18px;
+            font-family: 'Courier New', monospace;
+            flex: 1;
+            min-width: 0;
+            text-align: center;
+            margin: 0;
+        }
+        
+        #submitScoreButton {
+            margin: 0;
+            flex-shrink: 0;
+            width: auto;
+            white-space: nowrap;
+        }
+        
+        /* Style for disabled submit button */
+        #submitScoreButton:disabled {
+            background-color: #666;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        #scoreSubmitStatus {
+            font-size: 16px;
+            margin: 0 auto 15px auto;
+            padding: 5px;
+            color: #4CAF50;
+            display: none;
+            max-width: 400px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border-radius: 5px;
         }
     </style>
 </head>
@@ -334,17 +428,11 @@
                 </div>
             </div>
             
-            <div class="instruction-section">
-                <h3>TIPS</h3>
-                <ul style="text-align: left;">
-                    <li>Collect different weapons to deal with various enemy types</li>
-                    <li>Look for health pickups when your health is low</li>
-                    <li>Enemies get stronger with each wave - be prepared!</li>
-                    <li>Some enemies have special attacks - keep moving to avoid them</li>
-                </ul>
-            </div>
-            
             <button id="startGameButton">START GAME</button>
+            <button id="leaderboardButton">VIEW LEADERBOARD</button>
+            <div id="gameFooter">
+                Made by <a href="https://x.com/0xyardev" target="_blank">Yard</a>
+            </div>
         </div>
     </div>
 
@@ -359,7 +447,17 @@
                 <p>Score: <span id="finalScore">0</span></p>
                 <p>Wave: <span id="finalLevel">1</span></p>
             </div>
-            <button id="restartButton">Restart</button>
+            <label for="playerNameInput" class="name-label">Name:</label>
+            <div class="submit-container">
+                <input type="text" id="playerNameInput" placeholder="Enter your name">
+                <button id="submitScoreButton">SUBMIT SCORE</button>
+            </div>
+            <span id="scoreSubmitStatus"></span>
+            <button id="restartButton">RESTART</button>
+            <button id="viewLeaderboardButton">VIEW LEADERBOARD</button>
+            <div id="gameFooter">
+                Made by <a href="https://x.com/0xyardev" target="_blank">Yard</a>
+            </div>
         </div>
     </div>
     <div id="menuScreen">
@@ -399,10 +497,6 @@
         </div>
         
         <p style="margin-top: 10px; font-size: 14px; color: #666;">Press ESC to close menu</p>
-    </div>
-    
-    <div id="gameFooter">
-        Made by <a href="https://x.com/0xyardev" target="_blank">Yard</a>
     </div>
     
     <script type="importmap">

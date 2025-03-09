@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { initLeaderboardButtons } from './leaderboard.js';
 
 // Debug flag - turn this on to help troubleshoot
 const DEBUG = false;
@@ -25,30 +26,28 @@ const gameState = {
     maxHealth: 100,
     ammo: 30,
     maxAmmo: 30,
+    bullets: 30,
     score: 0,
     level: 1,
-    currentGunType: 'pistol',
+    gameOver: false,
     isReloading: false,
     isMouseDown: false,
-    gameOver: false,
-    menuOpen: false,
-    showingRoundMessage: false,
+    currentGunType: 'pistol',
     currentRecoil: { x: 0, y: 0 },
     recoilActive: false,
     recoilRecovery: 0,
     cameraOriginalY: null,
     isZoomed: false,
-    originalFOV: 75, // Store original FOV for zoom
-    lastPickupHintTime: 0, // Track when the last pickup hint was shown
-    nearbyPickup: null, // Track the type of nearby pickup
+    originalFOV: 75,
+    lastPickupHintTime: 0,
+    nearbyPickup: null,
     foundMachineGun: false,
     foundSniperRifle: false,
     foundShotgun: false,
     foundRocketLauncher: false,
-    gameStarted: false, // Track if game has started (past title screen)
-    firstVisit: true,   // Track if this is the first visit
-    soundEnabled: true, // Track if sound is enabled
-    allBuildingBounds: [] // Store building bounds
+    gameStarted: false,
+    menuOpen: false,
+    clickedGameOverButton: false // Flag to track if a game over button was clicked
 };
 
 // DOM elements
@@ -303,8 +302,12 @@ document.addEventListener('mouseup', (event) => {
 });
 
 controls.addEventListener('lock', () => {
-    if (gameState.gameOver) {
-        restartGame();
+    // Only restart the game if game over and not clicking on buttons
+    // This prevents the game from restarting when clicking on the game over screen buttons
+    if (gameState.gameOver && !gameState.clickedGameOverButton) {
+        // If game is over, immediately exit pointer lock to prevent accidental restart
+        document.exitPointerLock();
+        return;
     }
     
     // Don't automatically start the game when controls are locked
@@ -390,10 +393,11 @@ document.addEventListener('keyup', (event) => {
     }
 });
 
-restartButton.addEventListener('click', () => {
-    restartGame();
-    controls.lock();
-});
+// This event listener is now handled in the checkGameOver function
+// restartButton.addEventListener('click', () => {
+//     restartGame();
+//     controls.lock();
+// });
 
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -1408,6 +1412,26 @@ function interactWithPickups() {
 
 // Function to restart game
 function restartGame() {
+    // Remove the document click handler that prevents pointer lock
+    const gameOverScreen = document.getElementById('gameOver');
+    gameOverScreen.style.display = 'none';
+    
+    // Reset the submit button and status message
+    const submitButton = document.getElementById('submitScoreButton');
+    if (submitButton) {
+        // Create a new button to remove all event listeners
+        const newSubmitButton = submitButton.cloneNode(true);
+        newSubmitButton.disabled = false;
+        newSubmitButton.textContent = 'SUBMIT SCORE';
+        newSubmitButton.style.backgroundColor = '#3a86ff';
+        submitButton.parentNode.replaceChild(newSubmitButton, submitButton);
+    }
+    
+    const statusElement = document.getElementById('scoreSubmitStatus');
+    if (statusElement) {
+        statusElement.style.display = 'none';
+    }
+    
     // Reset game state
     gameState.health = 100;
     gameState.ammo = 10;
@@ -1431,6 +1455,7 @@ function restartGame() {
     gameState.foundShotgun = false;
     gameState.foundRocketLauncher = false;
     gameState.menuOpen = false; // Reset menu state
+    gameState.clickedGameOverButton = false; // Reset button click flag
     
     // Hide menu if it's open
     document.getElementById('menuScreen').style.display = 'none';
@@ -1814,6 +1839,9 @@ function init() {
     if (gameState.gameStarted) {
         spawnEnemies();
     }
+    
+    // Initialize leaderboard buttons
+    initLeaderboardButtons();
 }
 
 // Initialize the game
@@ -2558,16 +2586,162 @@ function createPistolPickup(position) {
 function checkGameOver() {
     if (gameState.health <= 0 && !gameState.gameOver) {
         gameState.gameOver = true;
+        gameState.clickedGameOverButton = false; // Reset the flag
+        
+        // Update final score and level in the game over screen
+        document.getElementById('finalScore').textContent = gameState.score;
+        document.getElementById('finalLevel').textContent = gameState.level;
+        
+        // Pre-fill player name input if available
+        import('./leaderboard.js').then(module => {
+            const playerName = module.getPlayerName();
+            const playerNameInput = document.getElementById('playerNameInput');
+            if (playerNameInput) {
+                if (playerName) {
+                    playerNameInput.value = playerName;
+                }
+                // Focus on the input field after a short delay to ensure the screen is visible
+                setTimeout(() => {
+                    playerNameInput.focus();
+                }, 100);
+            }
+        });
         
         // Show game over screen
-        finalScoreEl.textContent = gameState.score;
-        finalLevelEl.textContent = gameState.level;
+        const gameOverScreen = document.getElementById('gameOver');
+        gameOverScreen.style.display = 'block';
         
-        gameOverEl.style.display = 'block';
-        controls.unlock();
+        // Completely disable pointer lock controls
+        controls.enabled = false;
+        document.exitPointerLock();
         
-        // Hide pickup hint
-        hidePickupHint();
+        // Add a click event listener to the entire document to prevent pointer lock
+        const preventLock = (e) => {
+            // Only prevent if game is over and not clicking on a button or input
+            if (gameState.gameOver && 
+                e.target.id !== 'restartButton' && 
+                e.target.id !== 'submitScoreButton' && 
+                e.target.id !== 'viewLeaderboardButton' &&
+                e.target.id !== 'playerNameInput') {
+                e.stopPropagation();
+                document.exitPointerLock();
+            }
+        };
+        
+        // Remove any existing listener first
+        document.removeEventListener('click', preventLock);
+        document.addEventListener('click', preventLock);
+        
+        // Clear any existing event listeners from the buttons by cloning them
+        const setupGameOverButton = (id, callback) => {
+            const button = document.getElementById(id);
+            if (button) {
+                // Clone the button to remove any existing event listeners
+                const newButton = button.cloneNode(true);
+                button.parentNode.replaceChild(newButton, button);
+                
+                // Add the new event listener
+                newButton.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    gameState.clickedGameOverButton = true;
+                    callback(e);
+                });
+            }
+        };
+        
+        // Set up the restart button
+        setupGameOverButton('restartButton', () => {
+            restartGame();
+            controls.lock();
+        });
+        
+        // Set up the submit score button
+        setupGameOverButton('submitScoreButton', () => {
+            const playerNameInput = document.getElementById('playerNameInput');
+            const playerName = playerNameInput ? playerNameInput.value.trim() : '';
+            const score = parseInt(document.getElementById('finalScore').textContent, 10) || 0;
+            const wave = parseInt(document.getElementById('finalLevel').textContent, 10) || 1;
+            const statusElement = document.getElementById('scoreSubmitStatus');
+            
+            if (!playerName) {
+                if (statusElement) {
+                    statusElement.textContent = 'Please enter your name';
+                    statusElement.style.color = '#ff3a3a';
+                    statusElement.style.display = 'block';
+                }
+                return;
+            }
+            
+            // Import the necessary functions from leaderboard.js
+            import('./leaderboard.js').then(module => {
+                // Save the player name
+                module.savePlayerName(playerName);
+                
+                // Show loading state
+                const submitButton = document.getElementById('submitScoreButton');
+                if (submitButton) {
+                    submitButton.disabled = true;
+                    submitButton.textContent = 'SUBMITTING...';
+                    submitButton.style.backgroundColor = '#666';
+                }
+                
+                // Submit the score
+                module.submitScore(playerName, score, wave).then(result => {
+                    if (result.success) {
+                        if (statusElement) {
+                            statusElement.textContent = 'Score submitted successfully! Redirecting to leaderboard...';
+                            statusElement.style.color = '#4CAF50';
+                            statusElement.style.display = 'block';
+                        }
+                        
+                        // Update the submit button text
+                        if (submitButton) {
+                            submitButton.textContent = 'SUBMITTED';
+                        }
+                        
+                        // Redirect to the leaderboard page after a short delay
+                        setTimeout(() => {
+                            window.location.href = 'leaderboard.html';
+                        }, 1500); // 1.5 second delay to show the success message
+                    } else {
+                        if (statusElement) {
+                            statusElement.textContent = `Error: ${result.error}`;
+                            statusElement.style.color = '#ff3a3a';
+                            statusElement.style.display = 'block';
+                        }
+                        
+                        // Re-enable the submit button
+                        if (submitButton) {
+                            submitButton.disabled = false;
+                            submitButton.textContent = 'SUBMIT SCORE';
+                            submitButton.style.backgroundColor = '#3a86ff';
+                        }
+                    }
+                }).catch(error => {
+                    // Handle any unexpected errors
+                    console.error('Error submitting score:', error);
+                    
+                    if (statusElement) {
+                        statusElement.textContent = 'An unexpected error occurred. Please try again.';
+                        statusElement.style.color = '#ff3a3a';
+                        statusElement.style.display = 'block';
+                    }
+                    
+                    // Re-enable the submit button
+                    if (submitButton) {
+                        submitButton.disabled = false;
+                        submitButton.textContent = 'SUBMIT SCORE';
+                        submitButton.style.backgroundColor = '#3a86ff';
+                    }
+                });
+            });
+        });
+        
+        // Set up the view leaderboard button
+        setupGameOverButton('viewLeaderboardButton', () => {
+            window.location.href = 'leaderboard.html';
+        });
     }
 }
 
@@ -5648,3 +5822,16 @@ function createFireballExplosion(position) {
     
     animateExplosion();
 }
+
+// Add a global document click handler to prevent pointer lock when game is over
+document.body.addEventListener('click', (e) => {
+    if (gameState.gameOver) {
+        // If clicking outside the game over screen buttons, prevent pointer lock
+        if (e.target.id !== 'restartButton' && 
+            e.target.id !== 'submitScoreButton' && 
+            e.target.id !== 'viewLeaderboardButton') {
+            e.stopPropagation();
+            document.exitPointerLock();
+        }
+    }
+});
