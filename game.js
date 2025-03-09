@@ -357,26 +357,6 @@ document.addEventListener('keydown', (event) => {
         case 'KeyE':
             interactWithPickups();
             break;
-        case 'Digit1':
-            // Switch to pistol if available
-            switchToWeapon('pistol');
-            break;
-        case 'Digit2':
-            // Switch to machine gun if available
-            switchToWeapon('machineGun');
-            break;
-        case 'Digit3':
-            // Switch to sniper rifle if available
-            switchToWeapon('sniperRifle');
-            break;
-        case 'Digit4':
-            // Switch to shotgun if available
-            switchToWeapon('shotgun');
-            break;
-        case 'Digit5':
-            // Switch to rocket launcher if available
-            switchToWeapon('rocketLauncher');
-            break;
     }
 });
 
@@ -1592,28 +1572,6 @@ if (!webGLStatus.supported) {
     
     // Log successful setup
     debugLog('Game initialized successfully!');
-}
-
-// Create bullet pickup
-function createBulletPickup() {
-    const bulletGeometry = new THREE.BoxGeometry(0.2, 0.2, 0.5);
-    const bulletMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-    const bullet = new THREE.Mesh(bulletGeometry, bulletMaterial);
-    
-    // Random position
-    const x = (Math.random() - 0.5) * 20;
-    const z = (Math.random() - 0.5) * 20;
-    bullet.position.set(x, 1, z);
-    
-    // Add to scene
-    scene.add(bullet);
-    
-    return {
-        mesh: bullet,
-        type: 'bullets',
-        bullets: 10, // Each pickup gives 10 bullets
-        timeCreated: performance.now()
-    };
 }
 
 // Reload function
@@ -3906,6 +3864,7 @@ function createShotgun() {
     
     // Position the weapon
     weaponGroup.position.set(0.3, -0.3, -0.5);
+    weaponGroup.rotation.y = Math.PI / 2;
     weaponGroup.visible = false; // Hide initially
     
     return weaponGroup;
@@ -4021,6 +3980,7 @@ function createRocketLauncher() {
     
     // Position the weapon
     weaponGroup.position.set(0.3, -0.3, -0.5);
+    weaponGroup.rotation.y = Math.PI / 2;
     weaponGroup.visible = false; // Hide initially
     
     return weaponGroup;
