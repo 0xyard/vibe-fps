@@ -166,7 +166,6 @@ camera.add(audioListener);
 const soundEffects = {
     shoot: new THREE.Audio(audioListener),
     reload: new THREE.Audio(audioListener),
-    enemyHit: new THREE.Audio(audioListener),
     enemyDeath: new THREE.Audio(audioListener),
     pickupBullets: new THREE.Audio(audioListener),
     pickupHealth: new THREE.Audio(audioListener),
@@ -200,11 +199,6 @@ function loadSoundEffects() {
         soundEffects.reload.setVolume(0.5);
     });
     
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/209/209-preview.mp3', function(buffer) {
-        soundEffects.enemyHit.setBuffer(buffer);
-        soundEffects.enemyHit.setVolume(0.5);
-    });
-    
     audioLoader.load('https://assets.mixkit.co/active_storage/sfx/3168/3168-preview.mp3', function(buffer) {
         soundEffects.enemyDeath.setBuffer(buffer);
         soundEffects.enemyDeath.setVolume(0.5);
@@ -216,7 +210,7 @@ function loadSoundEffects() {
     });
     
     // Player hurt sound - cartoon grunt/yelp
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1143/1143-preview.mp3', function(buffer) {
+    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/2155/2155-preview.mp3', function(buffer) {
         soundEffects.playerHurt.setBuffer(buffer);
         soundEffects.playerHurt.setVolume(0.7);
     });
@@ -982,6 +976,7 @@ function shoot() {
         } else if (gameState.currentGunType === 'shotgun') {
             shotgun.localToWorld(bulletStartPosition);
         } else if (gameState.currentGunType === 'rocketLauncher') {
+            bulletStartPosition = new THREE.Vector3(0, 0, 0);
             rocketLauncher.localToWorld(bulletStartPosition);
         }
     }
@@ -1916,9 +1911,6 @@ function updateBulletProjectiles(delta) {
                 
                 // Damage enemy
                 enemy.health -= bullet.damage;
-                
-                // Play enemy hit sound
-                playSound('enemyHit');
                 
                 // Visual feedback for hit
                 enemy.mesh.children.forEach(part => {
