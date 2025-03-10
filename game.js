@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { initLeaderboardButtons } from './leaderboard.js';
 
 // Debug flag - turn this on to help troubleshoot
 const DEBUG = false;
@@ -25,30 +26,29 @@ const gameState = {
     maxHealth: 100,
     ammo: 30,
     maxAmmo: 30,
+    bullets: 30,
     score: 0,
     level: 1,
-    currentGunType: 'pistol',
+    gameOver: false,
     isReloading: false,
     isMouseDown: false,
-    gameOver: false,
-    menuOpen: false,
-    showingRoundMessage: false,
+    currentGunType: 'pistol',
     currentRecoil: { x: 0, y: 0 },
     recoilActive: false,
     recoilRecovery: 0,
     cameraOriginalY: null,
     isZoomed: false,
-    originalFOV: 75, // Store original FOV for zoom
-    lastPickupHintTime: 0, // Track when the last pickup hint was shown
-    nearbyPickup: null, // Track the type of nearby pickup
+    originalFOV: 75,
+    lastPickupHintTime: 0,
+    nearbyPickup: null,
     foundMachineGun: false,
     foundSniperRifle: false,
     foundShotgun: false,
     foundRocketLauncher: false,
-    gameStarted: false, // Track if game has started (past title screen)
-    firstVisit: true,   // Track if this is the first visit
-    soundEnabled: true, // Track if sound is enabled
-    allBuildingBounds: [] // Store building bounds
+    gameStarted: false,
+    menuOpen: false,
+    soundEnabled: true, // Initialize sound to be enabled by default
+    clickedGameOverButton: false // Flag to track if a game over button was clicked
 };
 
 // DOM elements
@@ -188,80 +188,72 @@ const soundEffects = {
 // Audio loader
 const audioLoader = new THREE.AudioLoader();
 
-// Load sound effects
+// Load sound effects with retry mechanism
 function loadSoundEffects() {
-    // Cartoon-style sound effects
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/212/212-preview.mp3', function(buffer) {
-        soundEffects.shoot.setBuffer(buffer);
-        soundEffects.shoot.setVolume(0.5);
-    });
+    const soundUrls = {
+        shoot: 'https://assets.mixkit.co/active_storage/sfx/212/212-preview.mp3',
+        reload: 'https://assets.mixkit.co/active_storage/sfx/1666/1666-preview.mp3',
+        enemyDeath: 'https://assets.mixkit.co/active_storage/sfx/3168/3168-preview.mp3',
+        pickupHealth: 'https://assets.mixkit.co/active_storage/sfx/270/270-preview.mp3',
+        playerHurt: 'https://assets.mixkit.co/active_storage/sfx/2155/2155-preview.mp3',
+        sniperShoot: 'https://assets.mixkit.co/active_storage/sfx/1670/1670-preview.mp3',
+        shotgunBlast: 'https://assets.mixkit.co/active_storage/sfx/1678/1678-preview.mp3',
+        rocketLaunch: 'https://assets.mixkit.co/active_storage/sfx/1184/1184-preview.mp3',
+        teleport: 'https://assets.mixkit.co/active_storage/sfx/1489/1489-preview.mp3',
+        thud: 'https://assets.mixkit.co/active_storage/sfx/3046/3046-preview.mp3',
+        waveStart: 'https://assets.mixkit.co/active_storage/sfx/2780/2780-preview.mp3',
+        fireball: 'https://assets.mixkit.co/active_storage/sfx/2656/2656-preview.mp3'
+    };
     
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1666/1666-preview.mp3', function(buffer) {
-        soundEffects.reload.setBuffer(buffer);
-        soundEffects.reload.setVolume(0.5);
-    });
+    // Function to load a single sound with retry
+    function loadSound(soundName, url, retryCount = 0) {
+        const maxRetries = 3;
+        
+        audioLoader.load(
+            url,
+            // Success callback
+            (buffer) => {
+                if (soundEffects[soundName]) {
+                    soundEffects[soundName].setBuffer(buffer);
+                    soundEffects[soundName].setVolume(0.5);
+                    if (DEBUG) {
+                        console.log(`Sound loaded successfully: ${soundName}`);
+                    }
+                }
+            },
+            // Progress callback
+            (xhr) => {
+                if (DEBUG) {
+                    console.log(`${soundName} ${(xhr.loaded / xhr.total * 100)}% loaded`);
+                }
+            },
+            // Error callback
+            (error) => {
+                console.error(`Error loading sound ${soundName}:`, error);
+                
+                // Retry if not exceeded max retries
+                if (retryCount < maxRetries) {
+                    console.log(`Retrying ${soundName} (${retryCount + 1}/${maxRetries})...`);
+                    setTimeout(() => {
+                        loadSound(soundName, url, retryCount + 1);
+                    }, 1000); // Wait 1 second before retrying
+                }
+            }
+        );
+    }
     
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/3168/3168-preview.mp3', function(buffer) {
-        soundEffects.enemyDeath.setBuffer(buffer);
-        soundEffects.enemyDeath.setVolume(0.5);
-    });
-    
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/270/270-preview.mp3', function(buffer) {
-        soundEffects.pickupHealth.setBuffer(buffer);
-        soundEffects.pickupHealth.setVolume(0.5);
-    });
-    
-    // Player hurt sound - cartoon grunt/yelp
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/2155/2155-preview.mp3', function(buffer) {
-        soundEffects.playerHurt.setBuffer(buffer);
-        soundEffects.playerHurt.setVolume(0.7);
-    });
-    
-    // Sniper rifle sound effect
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1670/1670-preview.mp3', function(buffer) {
-        soundEffects.sniperShoot.setBuffer(buffer);
-        soundEffects.sniperShoot.setVolume(0.5);
-    });
-    
-    // Shotgun blast sound effect
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1678/1678-preview.mp3', function(buffer) {
-        soundEffects.shotgunBlast.setBuffer(buffer);
-        soundEffects.shotgunBlast.setVolume(0.6);
-    });
-    
-    // Rocket launch sound effect
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1184/1184-preview.mp3', function(buffer) {
-        soundEffects.rocketLaunch.setBuffer(buffer);
-        soundEffects.rocketLaunch.setVolume(0.5);
-    });
-    
-    // Teleport sound effect
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1489/1489-preview.mp3', function(buffer) {
-        soundEffects.teleport.setBuffer(buffer);
-        soundEffects.teleport.setVolume(0.5);
-    });
-    
-    // Club swing sound effect
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/3046/3046-preview.mp3', function(buffer) {
-        soundEffects.thud.setBuffer(buffer);
-        soundEffects.thud.setVolume(0.5);
-    });
-    
-    // Wave start sound effect
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/2780/2780-preview.mp3', function(buffer) {
-        soundEffects.waveStart.setBuffer(buffer);
-        soundEffects.waveStart.setVolume(0.7);
-    });
-    
-    // Fireball sound effect
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/2656/2656-preview.mp3', function(buffer) {
-        soundEffects.fireball.setBuffer(buffer);
-        soundEffects.fireball.setVolume(0.5);
-    });
+    // Load all sounds
+    for (const [soundName, url] of Object.entries(soundUrls)) {
+        loadSound(soundName, url);
+    }
 }
 
 // Play sound effect if enabled
 function playSound(sound, volume) {
+    if (DEBUG) {
+        console.log(`Attempting to play sound: ${sound}, Sound enabled: ${gameState.soundEnabled}, Sound exists: ${!!soundEffects[sound]}, Has buffer: ${soundEffects[sound] ? !!soundEffects[sound].buffer : false}`);
+    }
+    
     if (gameState.soundEnabled && soundEffects[sound] && soundEffects[sound].buffer) {
         if (soundEffects[sound].isPlaying) {
             soundEffects[sound].stop();
@@ -270,6 +262,18 @@ function playSound(sound, volume) {
             soundEffects[sound].setVolume(volume);
         }
         soundEffects[sound].play();
+        
+        if (DEBUG) {
+            console.log(`Playing sound: ${sound}`);
+        }
+    } else if (DEBUG) {
+        if (!gameState.soundEnabled) {
+            console.log(`Sound not played: Sound is disabled`);
+        } else if (!soundEffects[sound]) {
+            console.log(`Sound not played: Sound "${sound}" does not exist`);
+        } else if (!soundEffects[sound].buffer) {
+            console.log(`Sound not played: Sound "${sound}" has no buffer (not loaded yet)`);
+        }
     }
 }
 
@@ -303,8 +307,12 @@ document.addEventListener('mouseup', (event) => {
 });
 
 controls.addEventListener('lock', () => {
-    if (gameState.gameOver) {
-        restartGame();
+    // Only restart the game if game over and not clicking on buttons
+    // This prevents the game from restarting when clicking on the game over screen buttons
+    if (gameState.gameOver && !gameState.clickedGameOverButton) {
+        // If game is over, immediately exit pointer lock to prevent accidental restart
+        document.exitPointerLock();
+        return;
     }
     
     // Don't automatically start the game when controls are locked
@@ -390,10 +398,11 @@ document.addEventListener('keyup', (event) => {
     }
 });
 
-restartButton.addEventListener('click', () => {
-    restartGame();
-    controls.lock();
-});
+// This event listener is now handled in the checkGameOver function
+// restartButton.addEventListener('click', () => {
+//     restartGame();
+//     controls.lock();
+// });
 
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -420,10 +429,12 @@ document.addEventListener('mousedown', (event) => {
 });
 
 // Sound toggle
-soundToggleEl.addEventListener('click', () => {
-    gameState.soundEnabled = !gameState.soundEnabled;
-    soundToggleEl.textContent = gameState.soundEnabled ? '🔊' : '🔇';
-});
+if (soundToggleEl) {
+    soundToggleEl.addEventListener('click', () => {
+        gameState.soundEnabled = !gameState.soundEnabled;
+        soundToggleEl.textContent = gameState.soundEnabled ? '🔊' : '🔇';
+    });
+}
 
 // Debug helper function
 function debugLog(message) {
@@ -1408,6 +1419,26 @@ function interactWithPickups() {
 
 // Function to restart game
 function restartGame() {
+    // Remove the document click handler that prevents pointer lock
+    const gameOverScreen = document.getElementById('gameOver');
+    gameOverScreen.style.display = 'none';
+    
+    // Reset the submit button and status message
+    const submitButton = document.getElementById('submitScoreButton');
+    if (submitButton) {
+        // Create a new button to remove all event listeners
+        const newSubmitButton = submitButton.cloneNode(true);
+        newSubmitButton.disabled = false;
+        newSubmitButton.textContent = 'SUBMIT SCORE';
+        newSubmitButton.style.backgroundColor = '#3a86ff';
+        submitButton.parentNode.replaceChild(newSubmitButton, submitButton);
+    }
+    
+    const statusElement = document.getElementById('scoreSubmitStatus');
+    if (statusElement) {
+        statusElement.style.display = 'none';
+    }
+    
     // Reset game state
     gameState.health = 100;
     gameState.ammo = 10;
@@ -1431,6 +1462,7 @@ function restartGame() {
     gameState.foundShotgun = false;
     gameState.foundRocketLauncher = false;
     gameState.menuOpen = false; // Reset menu state
+    gameState.clickedGameOverButton = false; // Reset button click flag
     
     // Hide menu if it's open
     document.getElementById('menuScreen').style.display = 'none';
@@ -1807,6 +1839,11 @@ function init() {
     // Set up title screen start button
     document.getElementById('startGameButton').addEventListener('click', startGame);
     
+    // Set initial sound toggle state
+    if (soundToggleEl) {
+        soundToggleEl.textContent = gameState.soundEnabled ? '🔊' : '🔇';
+    }
+    
     // Update UI after elements are initialized
     updateUI();
     
@@ -1814,6 +1851,9 @@ function init() {
     if (gameState.gameStarted) {
         spawnEnemies();
     }
+    
+    // Initialize leaderboard buttons
+    initLeaderboardButtons();
 }
 
 // Initialize the game
@@ -2558,16 +2598,162 @@ function createPistolPickup(position) {
 function checkGameOver() {
     if (gameState.health <= 0 && !gameState.gameOver) {
         gameState.gameOver = true;
+        gameState.clickedGameOverButton = false; // Reset the flag
+        
+        // Update final score and level in the game over screen
+        document.getElementById('finalScore').textContent = gameState.score;
+        document.getElementById('finalLevel').textContent = gameState.level;
+        
+        // Pre-fill player name input if available
+        import('./leaderboard.js').then(module => {
+            const playerName = module.getPlayerName();
+            const playerNameInput = document.getElementById('playerNameInput');
+            if (playerNameInput) {
+                if (playerName) {
+                    playerNameInput.value = playerName;
+                }
+                // Focus on the input field after a short delay to ensure the screen is visible
+                setTimeout(() => {
+                    playerNameInput.focus();
+                }, 100);
+            }
+        });
         
         // Show game over screen
-        finalScoreEl.textContent = gameState.score;
-        finalLevelEl.textContent = gameState.level;
+        const gameOverScreen = document.getElementById('gameOver');
+        gameOverScreen.style.display = 'block';
         
-        gameOverEl.style.display = 'block';
-        controls.unlock();
+        // Completely disable pointer lock controls
+        controls.enabled = false;
+        document.exitPointerLock();
         
-        // Hide pickup hint
-        hidePickupHint();
+        // Add a click event listener to the entire document to prevent pointer lock
+        const preventLock = (e) => {
+            // Only prevent if game is over and not clicking on a button or input
+            if (gameState.gameOver && 
+                e.target.id !== 'restartButton' && 
+                e.target.id !== 'submitScoreButton' && 
+                e.target.id !== 'viewLeaderboardButton' &&
+                e.target.id !== 'playerNameInput') {
+                e.stopPropagation();
+                document.exitPointerLock();
+            }
+        };
+        
+        // Remove any existing listener first
+        document.removeEventListener('click', preventLock);
+        document.addEventListener('click', preventLock);
+        
+        // Clear any existing event listeners from the buttons by cloning them
+        const setupGameOverButton = (id, callback) => {
+            const button = document.getElementById(id);
+            if (button) {
+                // Clone the button to remove any existing event listeners
+                const newButton = button.cloneNode(true);
+                button.parentNode.replaceChild(newButton, button);
+                
+                // Add the new event listener
+                newButton.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    gameState.clickedGameOverButton = true;
+                    callback(e);
+                });
+            }
+        };
+        
+        // Set up the restart button
+        setupGameOverButton('restartButton', () => {
+            restartGame();
+            controls.lock();
+        });
+        
+        // Set up the submit score button
+        setupGameOverButton('submitScoreButton', () => {
+            const playerNameInput = document.getElementById('playerNameInput');
+            const playerName = playerNameInput ? playerNameInput.value.trim() : '';
+            const score = parseInt(document.getElementById('finalScore').textContent, 10) || 0;
+            const wave = parseInt(document.getElementById('finalLevel').textContent, 10) || 1;
+            const statusElement = document.getElementById('scoreSubmitStatus');
+            
+            if (!playerName) {
+                if (statusElement) {
+                    statusElement.textContent = 'Please enter your name';
+                    statusElement.style.color = '#ff3a3a';
+                    statusElement.style.display = 'block';
+                }
+                return;
+            }
+            
+            // Import the necessary functions from leaderboard.js
+            import('./leaderboard.js').then(module => {
+                // Save the player name
+                module.savePlayerName(playerName);
+                
+                // Show loading state
+                const submitButton = document.getElementById('submitScoreButton');
+                if (submitButton) {
+                    submitButton.disabled = true;
+                    submitButton.textContent = 'SUBMITTING...';
+                    submitButton.style.backgroundColor = '#666';
+                }
+                
+                // Submit the score
+                module.submitScore(playerName, score, wave).then(result => {
+                    if (result.success) {
+                        if (statusElement) {
+                            statusElement.textContent = 'Score submitted successfully! Redirecting to leaderboard...';
+                            statusElement.style.color = '#4CAF50';
+                            statusElement.style.display = 'block';
+                        }
+                        
+                        // Update the submit button text
+                        if (submitButton) {
+                            submitButton.textContent = 'SUBMITTED';
+                        }
+                        
+                        // Redirect to the leaderboard page after a short delay
+                        setTimeout(() => {
+                            window.location.href = 'leaderboard.html';
+                        }, 1500); // 1.5 second delay to show the success message
+                    } else {
+                        if (statusElement) {
+                            statusElement.textContent = `Error: ${result.error}`;
+                            statusElement.style.color = '#ff3a3a';
+                            statusElement.style.display = 'block';
+                        }
+                        
+                        // Re-enable the submit button
+                        if (submitButton) {
+                            submitButton.disabled = false;
+                            submitButton.textContent = 'SUBMIT SCORE';
+                            submitButton.style.backgroundColor = '#3a86ff';
+                        }
+                    }
+                }).catch(error => {
+                    // Handle any unexpected errors
+                    console.error('Error submitting score:', error);
+                    
+                    if (statusElement) {
+                        statusElement.textContent = 'An unexpected error occurred. Please try again.';
+                        statusElement.style.color = '#ff3a3a';
+                        statusElement.style.display = 'block';
+                    }
+                    
+                    // Re-enable the submit button
+                    if (submitButton) {
+                        submitButton.disabled = false;
+                        submitButton.textContent = 'SUBMIT SCORE';
+                        submitButton.style.backgroundColor = '#3a86ff';
+                    }
+                });
+            });
+        });
+        
+        // Set up the view leaderboard button
+        setupGameOverButton('viewLeaderboardButton', () => {
+            window.location.href = 'leaderboard.html';
+        });
     }
 }
 
@@ -5648,3 +5834,47 @@ function createFireballExplosion(position) {
     
     animateExplosion();
 }
+
+// Add a global document click handler to prevent pointer lock when game is over
+document.body.addEventListener('click', (e) => {
+    if (gameState.gameOver) {
+        // If clicking outside the game over screen buttons, prevent pointer lock
+        if (e.target.id !== 'restartButton' && 
+            e.target.id !== 'submitScoreButton' && 
+            e.target.id !== 'viewLeaderboardButton') {
+            e.stopPropagation();
+            document.exitPointerLock();
+        }
+    }
+});
+
+// Function to check if sounds are loaded properly
+function checkSoundsLoaded() {
+    let loadedCount = 0;
+    let totalCount = 0;
+    
+    for (const sound in soundEffects) {
+        totalCount++;
+        if (soundEffects[sound].buffer) {
+            loadedCount++;
+        }
+    }
+    
+    console.log(`Sound loading status: ${loadedCount}/${totalCount} sounds loaded`);
+    
+    if (loadedCount < totalCount) {
+        console.log('Some sounds failed to load. This might be due to network issues or CORS restrictions.');
+        
+        // List unloaded sounds
+        for (const sound in soundEffects) {
+            if (!soundEffects[sound].buffer) {
+                console.log(`Sound not loaded: ${sound}`);
+            }
+        }
+    }
+    
+    return loadedCount === totalCount;
+}
+
+// Call this function after a delay to check if sounds are loaded
+setTimeout(checkSoundsLoaded, 5000); // Check after 5 seconds

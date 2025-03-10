@@ -1,1 +1,4 @@
 temp_game.js
+.env*
+*local.js
+node_modules
