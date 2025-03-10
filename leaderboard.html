@@ -156,9 +156,9 @@
                 <tr>
                     <th>Rank</th>
                     <th>Player</th>
-                    <th>Score</th>
                     <th>Wave</th>
-                    <th>Date</th>
+                    <th>Score</th>
+                    <th>Date & Time</th>
                 </tr>
             </thead>
             <tbody id="leaderboardBody">
@@ -198,15 +198,19 @@
                         // Add rank class for top 3
                         const rankClass = index < 3 ? `rank-${index + 1}` : '';
                         
-                        // Format date
+                        // Format date and time
                         const date = new Date(entry.created_at);
-                        const formattedDate = `${date.toLocaleDateString()}`;
+                        const dateFormatter = new Intl.DateTimeFormat(undefined, { 
+                            dateStyle: 'short', 
+                            timeStyle: 'short' 
+                        });
+                        const formattedDate = dateFormatter.format(date);
                         
                         row.innerHTML = `
                             <td class="${rankClass}">${index + 1}</td>
                             <td class="${rankClass}">${entry.player_name}</td>
-                            <td class="${rankClass}">${entry.score.toLocaleString()}</td>
                             <td class="${rankClass}">${entry.wave}</td>
+                            <td class="${rankClass}">${entry.score.toLocaleString()}</td>
                             <td>${formattedDate}</td>
                         `;
                         

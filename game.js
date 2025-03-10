@@ -47,6 +47,7 @@ const gameState = {
     foundRocketLauncher: false,
     gameStarted: false,
     menuOpen: false,
+    soundEnabled: true, // Initialize sound to be enabled by default
     clickedGameOverButton: false // Flag to track if a game over button was clicked
 };
 
@@ -187,80 +188,72 @@ const soundEffects = {
 // Audio loader
 const audioLoader = new THREE.AudioLoader();
 
-// Load sound effects
+// Load sound effects with retry mechanism
 function loadSoundEffects() {
-    // Cartoon-style sound effects
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/212/212-preview.mp3', function(buffer) {
-        soundEffects.shoot.setBuffer(buffer);
-        soundEffects.shoot.setVolume(0.5);
-    });
+    const soundUrls = {
+        shoot: 'https://assets.mixkit.co/active_storage/sfx/212/212-preview.mp3',
+        reload: 'https://assets.mixkit.co/active_storage/sfx/1666/1666-preview.mp3',
+        enemyDeath: 'https://assets.mixkit.co/active_storage/sfx/3168/3168-preview.mp3',
+        pickupHealth: 'https://assets.mixkit.co/active_storage/sfx/270/270-preview.mp3',
+        playerHurt: 'https://assets.mixkit.co/active_storage/sfx/2155/2155-preview.mp3',
+        sniperShoot: 'https://assets.mixkit.co/active_storage/sfx/1670/1670-preview.mp3',
+        shotgunBlast: 'https://assets.mixkit.co/active_storage/sfx/1678/1678-preview.mp3',
+        rocketLaunch: 'https://assets.mixkit.co/active_storage/sfx/1184/1184-preview.mp3',
+        teleport: 'https://assets.mixkit.co/active_storage/sfx/1489/1489-preview.mp3',
+        thud: 'https://assets.mixkit.co/active_storage/sfx/3046/3046-preview.mp3',
+        waveStart: 'https://assets.mixkit.co/active_storage/sfx/2780/2780-preview.mp3',
+        fireball: 'https://assets.mixkit.co/active_storage/sfx/2656/2656-preview.mp3'
+    };
     
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1666/1666-preview.mp3', function(buffer) {
-        soundEffects.reload.setBuffer(buffer);
-        soundEffects.reload.setVolume(0.5);
-    });
+    // Function to load a single sound with retry
+    function loadSound(soundName, url, retryCount = 0) {
+        const maxRetries = 3;
+        
+        audioLoader.load(
+            url,
+            // Success callback
+            (buffer) => {
+                if (soundEffects[soundName]) {
+                    soundEffects[soundName].setBuffer(buffer);
+                    soundEffects[soundName].setVolume(0.5);
+                    if (DEBUG) {
+                        console.log(`Sound loaded successfully: ${soundName}`);
+                    }
+                }
+            },
+            // Progress callback
+            (xhr) => {
+                if (DEBUG) {
+                    console.log(`${soundName} ${(xhr.loaded / xhr.total * 100)}% loaded`);
+                }
+            },
+            // Error callback
+            (error) => {
+                console.error(`Error loading sound ${soundName}:`, error);
+                
+                // Retry if not exceeded max retries
+                if (retryCount < maxRetries) {
+                    console.log(`Retrying ${soundName} (${retryCount + 1}/${maxRetries})...`);
+                    setTimeout(() => {
+                        loadSound(soundName, url, retryCount + 1);
+                    }, 1000); // Wait 1 second before retrying
+                }
+            }
+        );
+    }
     
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/3168/3168-preview.mp3', function(buffer) {
-        soundEffects.enemyDeath.setBuffer(buffer);
-        soundEffects.enemyDeath.setVolume(0.5);
-    });
-    
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/270/270-preview.mp3', function(buffer) {
-        soundEffects.pickupHealth.setBuffer(buffer);
-        soundEffects.pickupHealth.setVolume(0.5);
-    });
-    
-    // Player hurt sound - cartoon grunt/yelp
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/2155/2155-preview.mp3', function(buffer) {
-        soundEffects.playerHurt.setBuffer(buffer);
-        soundEffects.playerHurt.setVolume(0.7);
-    });
-    
-    // Sniper rifle sound effect
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1670/1670-preview.mp3', function(buffer) {
-        soundEffects.sniperShoot.setBuffer(buffer);
-        soundEffects.sniperShoot.setVolume(0.5);
-    });
-    
-    // Shotgun blast sound effect
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1678/1678-preview.mp3', function(buffer) {
-        soundEffects.shotgunBlast.setBuffer(buffer);
-        soundEffects.shotgunBlast.setVolume(0.6);
-    });
-    
-    // Rocket launch sound effect
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1184/1184-preview.mp3', function(buffer) {
-        soundEffects.rocketLaunch.setBuffer(buffer);
-        soundEffects.rocketLaunch.setVolume(0.5);
-    });
-    
-    // Teleport sound effect
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/1489/1489-preview.mp3', function(buffer) {
-        soundEffects.teleport.setBuffer(buffer);
-        soundEffects.teleport.setVolume(0.5);
-    });
-    
-    // Club swing sound effect
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/3046/3046-preview.mp3', function(buffer) {
-        soundEffects.thud.setBuffer(buffer);
-        soundEffects.thud.setVolume(0.5);
-    });
-    
-    // Wave start sound effect
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/2780/2780-preview.mp3', function(buffer) {
-        soundEffects.waveStart.setBuffer(buffer);
-        soundEffects.waveStart.setVolume(0.7);
-    });
-    
-    // Fireball sound effect
-    audioLoader.load('https://assets.mixkit.co/active_storage/sfx/2656/2656-preview.mp3', function(buffer) {
-        soundEffects.fireball.setBuffer(buffer);
-        soundEffects.fireball.setVolume(0.5);
-    });
+    // Load all sounds
+    for (const [soundName, url] of Object.entries(soundUrls)) {
+        loadSound(soundName, url);
+    }
 }
 
 // Play sound effect if enabled
 function playSound(sound, volume) {
+    if (DEBUG) {
+        console.log(`Attempting to play sound: ${sound}, Sound enabled: ${gameState.soundEnabled}, Sound exists: ${!!soundEffects[sound]}, Has buffer: ${soundEffects[sound] ? !!soundEffects[sound].buffer : false}`);
+    }
+    
     if (gameState.soundEnabled && soundEffects[sound] && soundEffects[sound].buffer) {
         if (soundEffects[sound].isPlaying) {
             soundEffects[sound].stop();
@@ -269,6 +262,18 @@ function playSound(sound, volume) {
             soundEffects[sound].setVolume(volume);
         }
         soundEffects[sound].play();
+        
+        if (DEBUG) {
+            console.log(`Playing sound: ${sound}`);
+        }
+    } else if (DEBUG) {
+        if (!gameState.soundEnabled) {
+            console.log(`Sound not played: Sound is disabled`);
+        } else if (!soundEffects[sound]) {
+            console.log(`Sound not played: Sound "${sound}" does not exist`);
+        } else if (!soundEffects[sound].buffer) {
+            console.log(`Sound not played: Sound "${sound}" has no buffer (not loaded yet)`);
+        }
     }
 }
 
@@ -424,10 +429,12 @@ document.addEventListener('mousedown', (event) => {
 });
 
 // Sound toggle
-soundToggleEl.addEventListener('click', () => {
-    gameState.soundEnabled = !gameState.soundEnabled;
-    soundToggleEl.textContent = gameState.soundEnabled ? '🔊' : '🔇';
-});
+if (soundToggleEl) {
+    soundToggleEl.addEventListener('click', () => {
+        gameState.soundEnabled = !gameState.soundEnabled;
+        soundToggleEl.textContent = gameState.soundEnabled ? '🔊' : '🔇';
+    });
+}
 
 // Debug helper function
 function debugLog(message) {
@@ -1831,6 +1838,11 @@ function init() {
     
     // Set up title screen start button
     document.getElementById('startGameButton').addEventListener('click', startGame);
+    
+    // Set initial sound toggle state
+    if (soundToggleEl) {
+        soundToggleEl.textContent = gameState.soundEnabled ? '🔊' : '🔇';
+    }
     
     // Update UI after elements are initialized
     updateUI();
@@ -5835,3 +5847,34 @@ document.body.addEventListener('click', (e) => {
         }
     }
 });
+
+// Function to check if sounds are loaded properly
+function checkSoundsLoaded() {
+    let loadedCount = 0;
+    let totalCount = 0;
+    
+    for (const sound in soundEffects) {
+        totalCount++;
+        if (soundEffects[sound].buffer) {
+            loadedCount++;
+        }
+    }
+    
+    console.log(`Sound loading status: ${loadedCount}/${totalCount} sounds loaded`);
+    
+    if (loadedCount < totalCount) {
+        console.log('Some sounds failed to load. This might be due to network issues or CORS restrictions.');
+        
+        // List unloaded sounds
+        for (const sound in soundEffects) {
+            if (!soundEffects[sound].buffer) {
+                console.log(`Sound not loaded: ${sound}`);
+            }
+        }
+    }
+    
+    return loadedCount === totalCount;
+}
+
+// Call this function after a delay to check if sounds are loaded
+setTimeout(checkSoundsLoaded, 5000); // Check after 5 seconds
