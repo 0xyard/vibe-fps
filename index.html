@@ -407,6 +407,42 @@
             background-color: rgba(0, 0, 0, 0.5);
             border-radius: 5px;
         }
+        
+        .username-section {
+            margin: 20px 0;
+            text-align: center;
+            background-color: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            max-width: 400px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        .username-section h3 {
+            color: #3a86ff;
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+        
+        .username-hint {
+            font-size: 14px;
+            color: #f5f5f5;
+            margin-top: 10px;
+            margin-bottom: 0;
+        }
+        
+        #titlePlayerNameInput {
+            background: rgba(255, 255, 255, 0.9);
+            border: 2px solid #3a86ff;
+            border-radius: 5px;
+            padding: 10px 15px;
+            font-size: 18px;
+            font-family: 'Courier New', monospace;
+            width: 100%;
+            text-align: center;
+            box-sizing: border-box;
+        }
     </style>
     <!-- Vercel Web Analytics -->
     <script>
@@ -433,6 +469,14 @@
                 </div>
             </div>
             
+            <div class="username-section">
+                <h3>YOUR PLAYER NAME</h3>
+                <div class="submit-container">
+                    <input type="text" id="titlePlayerNameInput" placeholder="Enter your name">
+                </div>
+                <p class="username-hint">This name will be used for the leaderboard</p>
+            </div>
+            
             <button id="startGameButton">START GAME</button>
             <button id="leaderboardButton">VIEW LEADERBOARD</button>
             <div id="gameFooter">
@@ -452,9 +496,7 @@
                 <p>Score: <span id="finalScore">0</span></p>
                 <p>Wave: <span id="finalLevel">1</span></p>
             </div>
-            <label for="playerNameInput" class="name-label">Name:</label>
             <div class="submit-container">
-                <input type="text" id="playerNameInput" placeholder="Enter your name">
                 <button id="submitScoreButton">SUBMIT SCORE</button>
             </div>
             <span id="scoreSubmitStatus"></span>

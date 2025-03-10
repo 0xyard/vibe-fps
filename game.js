@@ -169,18 +169,13 @@ const soundEffects = {
     shoot: new THREE.Audio(audioListener),
     reload: new THREE.Audio(audioListener),
     enemyDeath: new THREE.Audio(audioListener),
-    pickupBullets: new THREE.Audio(audioListener),
     pickupHealth: new THREE.Audio(audioListener),
     playerHurt: new THREE.Audio(audioListener),
     sniperShoot: new THREE.Audio(audioListener),
-    explosion: new THREE.Audio(audioListener),
     shotgunBlast: new THREE.Audio(audioListener),
     rocketLaunch: new THREE.Audio(audioListener),
     teleport: new THREE.Audio(audioListener),
     thud: new THREE.Audio(audioListener),
-    ghostDeath: new THREE.Audio(audioListener),
-    ninjaDeath: new THREE.Audio(audioListener),
-    cyclopsDeath: new THREE.Audio(audioListener),
     waveStart: new THREE.Audio(audioListener),
     fireball: new THREE.Audio(audioListener)
 };
@@ -1431,6 +1426,7 @@ function restartGame() {
         newSubmitButton.disabled = false;
         newSubmitButton.textContent = 'SUBMIT SCORE';
         newSubmitButton.style.backgroundColor = '#3a86ff';
+        newSubmitButton.style.display = 'block'; // Reset display to visible
         submitButton.parentNode.replaceChild(newSubmitButton, submitButton);
     }
     
@@ -1874,6 +1870,28 @@ function checkFirstVisit() {
     }
 }
 
+// Generate a random funny username
+function generateRandomUsername() {
+    const adjectives = [
+        "Epic", "Sneaky", "Mighty", "Sleepy", "Jumpy", "Grumpy", "Dizzy", "Sparkly", 
+        "Wobbly", "Fluffy", "Bouncy", "Speedy", "Zesty", "Quirky", "Sassy", "Fuzzy",
+        "Glitchy", "Wiggly", "Zippy", "Wacky", "Jazzy", "Snazzy", "Peppy", "Loopy"
+    ];
+    
+    const nouns = [
+        "Potato", "Ninja", "Panda", "Zombie", "Unicorn", "Llama", "Penguin", "Taco", 
+        "Pickle", "Waffle", "Banana", "Raccoon", "Sloth", "Narwhal", "Donut", "Koala",
+        "Wizard", "Robot", "Pirate", "Dino", "Gamer", "Goose", "Muffin", "Yeti"
+    ];
+    
+    const numbers = Math.floor(Math.random() * 100);
+    
+    const randomAdjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
+    
+    return `${randomAdjective}${randomNoun}${numbers}`;
+}
+
 // Show the title screen
 function showTitleScreen() {
     document.getElementById('titleScreen').style.display = 'flex';
@@ -1886,6 +1904,20 @@ function showTitleScreen() {
         // Override to prevent locking while on title screen
         return false;
     };
+    
+    // Set a random username if one doesn't exist
+    import('./leaderboard.js').then(module => {
+        const playerName = module.getPlayerName();
+        const playerNameInput = document.getElementById('titlePlayerNameInput');
+        
+        if (!playerName) {
+            const randomUsername = generateRandomUsername();
+            playerNameInput.value = randomUsername;
+            // Don't save it yet, let the user confirm by starting the game
+        } else {
+            playerNameInput.value = playerName;
+        }
+    });
 }
 
 // Hide the title screen and start the game
@@ -1898,6 +1930,14 @@ function hideTitleScreen() {
 
 // Start the game from title screen
 function startGame() {
+    // Save the player name from the title screen
+    const playerNameInput = document.getElementById('titlePlayerNameInput');
+    if (playerNameInput && playerNameInput.value.trim()) {
+        import('./leaderboard.js').then(module => {
+            module.savePlayerName(playerNameInput.value.trim());
+        });
+    }
+    
     hideTitleScreen();
     gameState.gameStarted = true;
     
@@ -2604,14 +2644,85 @@ function checkGameOver() {
         document.getElementById('finalScore').textContent = gameState.score;
         document.getElementById('finalLevel').textContent = gameState.level;
         
-        // Pre-fill player name input if available
+        // Pre-fill player name input if available and auto-submit score
         import('./leaderboard.js').then(module => {
             const playerName = module.getPlayerName();
             const playerNameInput = document.getElementById('playerNameInput');
+            const score = gameState.score;
+            const wave = gameState.level;
+            const statusElement = document.getElementById('scoreSubmitStatus');
+            const submitButton = document.getElementById('submitScoreButton');
+            
+            // Hide submit button initially - we'll show it only if auto-submission fails
+            if (submitButton) {
+                submitButton.style.display = 'none';
+            }
+            
             if (playerNameInput) {
                 if (playerName) {
                     playerNameInput.value = playerName;
+                    
+                    // Auto-submit score if we have a player name
+                    if (submitButton && playerName.trim() !== '') {
+                        // Show loading state
+                        submitButton.disabled = true;
+                        submitButton.textContent = 'SUBMITTING...';
+                        submitButton.style.backgroundColor = '#666';
+                        
+                        // Submit the score
+                        module.submitScore(playerName, score, wave).then(result => {
+                            if (result.success) {
+                                if (statusElement) {
+                                    statusElement.textContent = 'Score submitted successfully!';
+                                    statusElement.style.color = '#4CAF50';
+                                    statusElement.style.display = 'block';
+                                }
+                                
+                                // Keep submit button hidden on success
+                                if (submitButton) {
+                                    submitButton.style.display = 'none';
+                                }
+                            } else {
+                                if (statusElement) {
+                                    statusElement.textContent = `Error: ${result.error}. Try submitting manually.`;
+                                    statusElement.style.color = '#ff3a3a';
+                                    statusElement.style.display = 'block';
+                                }
+                                
+                                // Show and re-enable the submit button on failure
+                                if (submitButton) {
+                                    submitButton.style.display = 'block';
+                                    submitButton.disabled = false;
+                                    submitButton.textContent = 'SUBMIT SCORE';
+                                    submitButton.style.backgroundColor = '#3a86ff';
+                                }
+                            }
+                        }).catch(error => {
+                            // Handle any unexpected errors
+                            console.error('Error submitting score:', error);
+                            
+                            if (statusElement) {
+                                statusElement.textContent = 'An unexpected error occurred. Please try submitting manually.';
+                                statusElement.style.color = '#ff3a3a';
+                                statusElement.style.display = 'block';
+                            }
+                            
+                            // Show and re-enable the submit button on error
+                            if (submitButton) {
+                                submitButton.style.display = 'block';
+                                submitButton.disabled = false;
+                                submitButton.textContent = 'SUBMIT SCORE';
+                                submitButton.style.backgroundColor = '#3a86ff';
+                            }
+                        });
+                    }
+                } else {
+                    // No player name, show the submit button
+                    if (submitButton) {
+                        submitButton.style.display = 'block';
+                    }
                 }
+                
                 // Focus on the input field after a short delay to ensure the screen is visible
                 setTimeout(() => {
                     playerNameInput.focus();
@@ -2648,8 +2759,15 @@ function checkGameOver() {
         const setupGameOverButton = (id, callback) => {
             const button = document.getElementById(id);
             if (button) {
+                // Save the current display style
+                const currentDisplay = button.style.display;
+                
                 // Clone the button to remove any existing event listeners
                 const newButton = button.cloneNode(true);
+                
+                // Restore the display style
+                newButton.style.display = currentDisplay;
+                
                 button.parentNode.replaceChild(newButton, button);
                 
                 // Add the new event listener
@@ -2670,6 +2788,12 @@ function checkGameOver() {
         
         // Set up the submit score button
         setupGameOverButton('submitScoreButton', () => {
+            // Check if the button is already disabled (score already submitted)
+            const submitButton = document.getElementById('submitScoreButton');
+            if (submitButton && submitButton.disabled) {
+                return; // Score already submitted
+            }
+            
             const playerNameInput = document.getElementById('playerNameInput');
             const playerName = playerNameInput ? playerNameInput.value.trim() : '';
             const score = parseInt(document.getElementById('finalScore').textContent, 10) || 0;
@@ -2691,7 +2815,6 @@ function checkGameOver() {
                 module.savePlayerName(playerName);
                 
                 // Show loading state
-                const submitButton = document.getElementById('submitScoreButton');
                 if (submitButton) {
                     submitButton.disabled = true;
                     submitButton.textContent = 'SUBMITTING...';
