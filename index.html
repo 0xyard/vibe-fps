@@ -95,6 +95,15 @@
             right: 20px;
             font-size: 18px;
         }
+        #enemies {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 18px;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
         #inventory {
             position: absolute;
             top: 50%;
@@ -490,6 +499,7 @@
         <div id="health">❤️ 100</div>
         <div id="ammo">🔫 10/10</div>
         <div id="bullets">🔹 Bullets: 30</div>
+        <div id="enemies">👾 Enemies: 0</div>
         <div id="gameOver">
             <h1>GAME OVER!</h1>
             <div class="game-stats">
@@ -516,7 +526,6 @@
         <div class="menu-section" style="border-top: none; padding-top: 0;">
             <div class="inventory-stats">
                 <h3 style="margin-top: 0;">Player Stats</h3>
-                <div class="inventory-item">❤️ Health: <span id="menu-health">100</span></div>
                 <div class="inventory-item">🏆 Score: <span id="menu-score">0</span></div>
                 <div class="inventory-item">🎮 Wave: <span id="menu-level">1</span></div>
             </div>

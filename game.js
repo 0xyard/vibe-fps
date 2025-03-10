@@ -55,6 +55,7 @@ const gameState = {
 const healthEl = document.getElementById('health');
 const ammoEl = document.getElementById('ammo');
 const bulletsEl = document.getElementById('bullets');
+const enemiesEl = document.getElementById('enemies');
 const gameOverEl = document.getElementById('gameOver');
 const finalScoreEl = document.getElementById('finalScore');
 const finalLevelEl = document.getElementById('finalLevel');
@@ -1325,6 +1326,9 @@ function updateUI() {
     
     // Hide bullets counter since we have unlimited ammo
     bulletsEl.style.display = 'none';
+    
+    // Update enemies remaining counter
+    enemiesEl.textContent = `👾 Enemies: ${enemies.length}`;
     
     // Update score display
     if (scoreDisplay) {
@@ -5059,6 +5063,7 @@ function updateMenuStats() {
     updateElement('menu-health', gameState.health);
     updateElement('menu-score', gameState.score);
     updateElement('menu-level', gameState.level);
+    updateElement('menu-enemies', enemies.length);
 }
 
 // Create a ninja enemy (fast and teleporting)
