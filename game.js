@@ -2647,7 +2647,7 @@ function checkGameOver() {
         // Pre-fill player name input if available and auto-submit score
         import('./leaderboard.js').then(module => {
             const playerName = module.getPlayerName();
-            const playerNameInput = document.getElementById('playerNameInput');
+            const playerNameInput = document.getElementById('titlePlayerNameInput');
             const score = gameState.score;
             const wave = gameState.level;
             const statusElement = document.getElementById('scoreSubmitStatus');
