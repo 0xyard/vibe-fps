@@ -55,6 +55,7 @@ const gameState = {
 const healthEl = document.getElementById('health');
 const ammoEl = document.getElementById('ammo');
 const bulletsEl = document.getElementById('bullets');
+const enemiesEl = document.getElementById('enemies');
 const gameOverEl = document.getElementById('gameOver');
 const finalScoreEl = document.getElementById('finalScore');
 const finalLevelEl = document.getElementById('finalLevel');
@@ -169,18 +170,13 @@ const soundEffects = {
     shoot: new THREE.Audio(audioListener),
     reload: new THREE.Audio(audioListener),
     enemyDeath: new THREE.Audio(audioListener),
-    pickupBullets: new THREE.Audio(audioListener),
     pickupHealth: new THREE.Audio(audioListener),
     playerHurt: new THREE.Audio(audioListener),
     sniperShoot: new THREE.Audio(audioListener),
-    explosion: new THREE.Audio(audioListener),
     shotgunBlast: new THREE.Audio(audioListener),
     rocketLaunch: new THREE.Audio(audioListener),
     teleport: new THREE.Audio(audioListener),
     thud: new THREE.Audio(audioListener),
-    ghostDeath: new THREE.Audio(audioListener),
-    ninjaDeath: new THREE.Audio(audioListener),
-    cyclopsDeath: new THREE.Audio(audioListener),
     waveStart: new THREE.Audio(audioListener),
     fireball: new THREE.Audio(audioListener)
 };
@@ -810,24 +806,24 @@ function spawnEnemies() {
     const enemyCount = 10 + ((gameState.level - 1) * 5);
     
     // Calculate number of spider enemies (only appear after wave 1)
-    // Start with 0 spiders in wave 1, then 2 in wave 2, and increase by 3 each wave
-    const spiderCount = gameState.level > 1 ? 2 + (gameState.level - 2) * 3 : 0;
+    // Start with 0 spiders in wave 1, then 5 in wave 2, and increase by 3 each wave
+    const spiderCount = gameState.level > 1 ? 5 + (gameState.level - 2) * 3 : 0;
     
     // Calculate number of flying enemies (only appear after wave 2)
-    // Start with 0 flyers in waves 1-2, then 1 in wave 3, and increase by 2 each wave
-    const flyingCount = gameState.level > 2 ? 1 + (gameState.level - 3) * 2 : 0;
+    // Start with 0 flyers in waves 1-2, then 2 in wave 3, and increase by 2 each wave
+    const flyingCount = gameState.level > 2 ? 2 + (gameState.level - 3) * 2 : 0;
     
     // Calculate number of ninja enemies (only appear after wave 3)
-    // Start with 0 ninjas in waves 1-3, then 1 in wave 4, and increase by 2 each wave
-    const ninjaCount = gameState.level > 3 ? 1 + (gameState.level - 4) * 2 : 0;
+    // Start with 0 ninjas in waves 1-3, then 2 in wave 4, and increase by 2 each wave
+    const ninjaCount = gameState.level > 3 ? 2 + (gameState.level - 4) * 2 : 0;
     
     // Calculate number of cyclops enemies (only appear after wave 4)
     // Start with 0 cyclops in waves 1-4, then 1 in wave 5, and increase by 1 each wave
     const cyclopsCount = gameState.level > 4 ? 1 + (gameState.level - 5) : 0;
     
     // Calculate number of fireball enemies (only appear after wave 2)
-    // Start with 0 fireball enemies in waves 1-5, then 2 in wave 6, and increase by 3 each wave
-    const fireballCount = gameState.level > 5 ? 2 + (gameState.level - 6) * 3 : 0;
+    // Start with 0 fireball enemies in waves 1-5, then 2 in wave 6, and increase by 2 each wave
+    const fireballCount = gameState.level > 5 ? 2 + (gameState.level - 6) * 2 : 0;
     
     // Calculate regular enemy count (total minus special types)
     const regularEnemyCount = enemyCount - spiderCount - flyingCount - ninjaCount - cyclopsCount - fireballCount;
@@ -1331,6 +1327,9 @@ function updateUI() {
     // Hide bullets counter since we have unlimited ammo
     bulletsEl.style.display = 'none';
     
+    // Update enemies remaining counter
+    enemiesEl.textContent = `👾 Enemies: ${enemies.length}`;
+    
     // Update score display
     if (scoreDisplay) {
         scoreDisplay.textContent = `Score: ${gameState.score}`;
@@ -1431,6 +1430,7 @@ function restartGame() {
         newSubmitButton.disabled = false;
         newSubmitButton.textContent = 'SUBMIT SCORE';
         newSubmitButton.style.backgroundColor = '#3a86ff';
+        newSubmitButton.style.display = 'block'; // Reset display to visible
         submitButton.parentNode.replaceChild(newSubmitButton, submitButton);
     }
     
@@ -1874,6 +1874,28 @@ function checkFirstVisit() {
     }
 }
 
+// Generate a random funny username
+function generateRandomUsername() {
+    const adjectives = [
+        "Epic", "Sneaky", "Mighty", "Sleepy", "Jumpy", "Grumpy", "Dizzy", "Sparkly", 
+        "Wobbly", "Fluffy", "Bouncy", "Speedy", "Zesty", "Quirky", "Sassy", "Fuzzy",
+        "Glitchy", "Wiggly", "Zippy", "Wacky", "Jazzy", "Snazzy", "Peppy", "Loopy"
+    ];
+    
+    const nouns = [
+        "Potato", "Ninja", "Panda", "Zombie", "Unicorn", "Llama", "Penguin", "Taco", 
+        "Pickle", "Waffle", "Banana", "Raccoon", "Sloth", "Narwhal", "Donut", "Koala",
+        "Wizard", "Robot", "Pirate", "Dino", "Gamer", "Goose", "Muffin", "Yeti"
+    ];
+    
+    const numbers = Math.floor(Math.random() * 100);
+    
+    const randomAdjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
+    
+    return `${randomAdjective}${randomNoun}${numbers}`;
+}
+
 // Show the title screen
 function showTitleScreen() {
     document.getElementById('titleScreen').style.display = 'flex';
@@ -1886,6 +1908,20 @@ function showTitleScreen() {
         // Override to prevent locking while on title screen
         return false;
     };
+    
+    // Set a random username if one doesn't exist
+    import('./leaderboard.js').then(module => {
+        const playerName = module.getPlayerName();
+        const playerNameInput = document.getElementById('titlePlayerNameInput');
+        
+        if (!playerName) {
+            const randomUsername = generateRandomUsername();
+            playerNameInput.value = randomUsername;
+            // Don't save it yet, let the user confirm by starting the game
+        } else {
+            playerNameInput.value = playerName;
+        }
+    });
 }
 
 // Hide the title screen and start the game
@@ -1898,6 +1934,14 @@ function hideTitleScreen() {
 
 // Start the game from title screen
 function startGame() {
+    // Save the player name from the title screen
+    const playerNameInput = document.getElementById('titlePlayerNameInput');
+    if (playerNameInput && playerNameInput.value.trim()) {
+        import('./leaderboard.js').then(module => {
+            module.savePlayerName(playerNameInput.value.trim());
+        });
+    }
+    
     hideTitleScreen();
     gameState.gameStarted = true;
     
@@ -2413,7 +2457,7 @@ function spawnEnemy(type) {
     
     switch (type) {
         case 'spider':
-            baseSpeed = 0.025; // Spiders are faster
+            baseSpeed = 0.028; // Spiders are faster
             health = 75; // Spiders have less health
             bounceAmount = 0.05; // Spiders bounce less
             flyHeight = 0; // Spiders don't fly
@@ -2425,14 +2469,14 @@ function spawnEnemy(type) {
             flyHeight = 2.5 + Math.random(); // Flying enemies stay in the air but lower
             break;
         case 'ninja':
-            baseSpeed = 0.04; // Ninjas are the fastest
+            baseSpeed = 0.035; // Ninjas are the fastest
             health = 80; // Ninjas have medium health
             bounceAmount = 0.05; // Ninjas bounce very little
             flyHeight = 0; // Ninjas don't fly
             break;
         case 'cyclops':
             baseSpeed = 0.015; // Cyclops are slow but powerful
-            health = 200; // Cyclops have high health
+            health = 500; // Cyclops have high health
             bounceAmount = 0.03; // Cyclops barely bounce
             flyHeight = 0; // Cyclops don't fly
             break;
@@ -2604,14 +2648,85 @@ function checkGameOver() {
         document.getElementById('finalScore').textContent = gameState.score;
         document.getElementById('finalLevel').textContent = gameState.level;
         
-        // Pre-fill player name input if available
+        // Pre-fill player name input if available and auto-submit score
         import('./leaderboard.js').then(module => {
             const playerName = module.getPlayerName();
-            const playerNameInput = document.getElementById('playerNameInput');
+            const playerNameInput = document.getElementById('titlePlayerNameInput');
+            const score = gameState.score;
+            const wave = gameState.level;
+            const statusElement = document.getElementById('scoreSubmitStatus');
+            const submitButton = document.getElementById('submitScoreButton');
+            
+            // Hide submit button initially - we'll show it only if auto-submission fails
+            if (submitButton) {
+                submitButton.style.display = 'none';
+            }
+            
             if (playerNameInput) {
                 if (playerName) {
                     playerNameInput.value = playerName;
+                    
+                    // Auto-submit score if we have a player name
+                    if (submitButton && playerName.trim() !== '') {
+                        // Show loading state
+                        submitButton.disabled = true;
+                        submitButton.textContent = 'SUBMITTING...';
+                        submitButton.style.backgroundColor = '#666';
+                        
+                        // Submit the score
+                        module.submitScore(playerName, score, wave).then(result => {
+                            if (result.success) {
+                                if (statusElement) {
+                                    statusElement.textContent = 'Score submitted successfully!';
+                                    statusElement.style.color = '#4CAF50';
+                                    statusElement.style.display = 'block';
+                                }
+                                
+                                // Keep submit button hidden on success
+                                if (submitButton) {
+                                    submitButton.style.display = 'none';
+                                }
+                            } else {
+                                if (statusElement) {
+                                    statusElement.textContent = `Error: ${result.error}. Try submitting manually.`;
+                                    statusElement.style.color = '#ff3a3a';
+                                    statusElement.style.display = 'block';
+                                }
+                                
+                                // Show and re-enable the submit button on failure
+                                if (submitButton) {
+                                    submitButton.style.display = 'block';
+                                    submitButton.disabled = false;
+                                    submitButton.textContent = 'SUBMIT SCORE';
+                                    submitButton.style.backgroundColor = '#3a86ff';
+                                }
+                            }
+                        }).catch(error => {
+                            // Handle any unexpected errors
+                            console.error('Error submitting score:', error);
+                            
+                            if (statusElement) {
+                                statusElement.textContent = 'An unexpected error occurred. Please try submitting manually.';
+                                statusElement.style.color = '#ff3a3a';
+                                statusElement.style.display = 'block';
+                            }
+                            
+                            // Show and re-enable the submit button on error
+                            if (submitButton) {
+                                submitButton.style.display = 'block';
+                                submitButton.disabled = false;
+                                submitButton.textContent = 'SUBMIT SCORE';
+                                submitButton.style.backgroundColor = '#3a86ff';
+                            }
+                        });
+                    }
+                } else {
+                    // No player name, show the submit button
+                    if (submitButton) {
+                        submitButton.style.display = 'block';
+                    }
                 }
+                
                 // Focus on the input field after a short delay to ensure the screen is visible
                 setTimeout(() => {
                     playerNameInput.focus();
@@ -2648,8 +2763,15 @@ function checkGameOver() {
         const setupGameOverButton = (id, callback) => {
             const button = document.getElementById(id);
             if (button) {
+                // Save the current display style
+                const currentDisplay = button.style.display;
+                
                 // Clone the button to remove any existing event listeners
                 const newButton = button.cloneNode(true);
+                
+                // Restore the display style
+                newButton.style.display = currentDisplay;
+                
                 button.parentNode.replaceChild(newButton, button);
                 
                 // Add the new event listener
@@ -2670,6 +2792,12 @@ function checkGameOver() {
         
         // Set up the submit score button
         setupGameOverButton('submitScoreButton', () => {
+            // Check if the button is already disabled (score already submitted)
+            const submitButton = document.getElementById('submitScoreButton');
+            if (submitButton && submitButton.disabled) {
+                return; // Score already submitted
+            }
+            
             const playerNameInput = document.getElementById('playerNameInput');
             const playerName = playerNameInput ? playerNameInput.value.trim() : '';
             const score = parseInt(document.getElementById('finalScore').textContent, 10) || 0;
@@ -2691,7 +2819,6 @@ function checkGameOver() {
                 module.savePlayerName(playerName);
                 
                 // Show loading state
-                const submitButton = document.getElementById('submitScoreButton');
                 if (submitButton) {
                     submitButton.disabled = true;
                     submitButton.textContent = 'SUBMITTING...';
@@ -4936,6 +5063,7 @@ function updateMenuStats() {
     updateElement('menu-health', gameState.health);
     updateElement('menu-score', gameState.score);
     updateElement('menu-level', gameState.level);
+    updateElement('menu-enemies', enemies.length);
 }
 
 // Create a ninja enemy (fast and teleporting)
@@ -5607,7 +5735,7 @@ function createFireball(position, direction) {
     const fireballData = {
         mesh: fireballGroup,
         direction: direction.clone().normalize(),
-        speed: 0.075, // Fireball speed (reduced by half from 0.15)
+        speed: 0.06, // Fireball speed
         damage: 15, // Damage to player
         particles: particles,
         light: light,
