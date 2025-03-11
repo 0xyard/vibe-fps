@@ -592,9 +592,68 @@
             opacity: 0.8;
         }
         
+        /* Aiming joystick styles */
+        #aim-joystick-container {
+            position: absolute;
+            bottom: 100px;
+            right: 20px;
+            width: 150px;
+            height: 150px;
+            pointer-events: auto;
+            display: none;
+            z-index: 100;
+            opacity: 0.8;
+        }
+        
+        /* Joystick icon styles */
+        .joystick-icon {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 60px;
+            height: 60px;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            opacity: 0.7;
+            pointer-events: none;
+            z-index: 101;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { transform: translate(-50%, -50%) scale(1); opacity: 0.7; }
+            50% { transform: translate(-50%, -50%) scale(1.2); opacity: 0.9; }
+            100% { transform: translate(-50%, -50%) scale(1); opacity: 0.7; }
+        }
+        
+        .joystick-label {
+            position: absolute;
+            bottom: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 14px;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 3px 8px;
+            border-radius: 10px;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+        
+        #move-icon {
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><path d="M12 2L8 6h3v5H6V8l-4 4 4 4v-3h5v5H8l4 4 4-4h-3v-5h5v3l4-4-4-4v3h-5V6h3z"/></svg>');
+        }
+        
+        #aim-icon {
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="9" fill="none" stroke="white" stroke-width="2"/><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>');
+        }
+        
         /* Make joystick visible only on mobile */
         @media (max-width: 600px) {
-            #joystick-container {
+            #joystick-container, #aim-joystick-container {
                 display: block;
             }
             
@@ -728,12 +787,12 @@
                 </div>
                 <div id="mobileInstructions" style="display: none; margin-top: 15px;">
                     <div style="background-color: rgba(58, 134, 255, 0.2); padding: 10px; border-radius: 5px;">
-                        <p style="margin: 5px 0;">• Use the virtual joystick to move</p>
-                        <p style="margin: 5px 0;">• Touch and drag to aim</p>
-                        <p style="margin: 5px 0;">• Tap to shoot, hold to keep firing</p>
+                        <p style="margin: 5px 0;">• Use the left joystick to move</p>
+                        <p style="margin: 5px 0;">• Use the right joystick to aim</p>
+                        <p style="margin: 5px 0;">• Tap the right joystick to shoot</p>
+                        <p style="margin: 5px 0;">• Hold the right joystick to keep firing</p>
                         <p style="margin: 5px 0;">• Auto-reload when low on ammo</p>
                         <p style="margin: 5px 0;">• Tap popup to pick up items</p>
-                        <p style="margin: 5px 0;">• Two-finger touch to zoom (sniper)</p>
                         <p style="margin: 5px 0;">• Swipe up to jump</p>
                     </div>
                 </div>
@@ -771,7 +830,12 @@
         <div id="ammo">🔫 10/10</div>
         <div id="bullets">🔹 Bullets: 30</div>
         <div id="enemies">👾 0</div>
-        <div id="joystick-container"></div>
+        <div id="joystick-container">
+            <div id="move-icon" class="joystick-icon"></div>
+        </div>
+        <div id="aim-joystick-container">
+            <div id="aim-icon" class="joystick-icon"></div>
+        </div>
         <div id="gameOver">
             <h1>GAME OVER!</h1>
             <div class="game-stats">
@@ -813,9 +877,9 @@
                     <p>🔍 <strong>E</strong> - Interact</p>
                 </div>
                 <div id="mobileMenuControls" style="display: none; text-align: left;">
-                    <p>• Use the virtual joystick to move</p>
-                    <p>• Touch and drag to aim</p>
-                    <p>• Tap to shoot, hold to keep firing</p>
+                    <p>• Use the left joystick to move</p>
+                    <p>• Use the right joystick to aim</p>
+                    <p>• Tap/hold the right joystick to shoot</p>
                     <p>• Auto-reload when low on ammo</p>
                     <p>• Tap the popup to pick up items</p>
                 </div>

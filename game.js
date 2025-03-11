@@ -114,6 +114,15 @@ let joystickMovement = { x: 0, y: 0 };
 let isJoystickActive = false;
 let joystickIntensity = 0; // Track joystick force for variable movement speed
 
+// Aiming joystick variables
+let aimJoystick = null;
+let aimJoystickMovement = { x: 0, y: 0 };
+let isAimJoystickActive = false;
+let aimJoystickIntensity = 0;
+
+// Touch sensitivity for mobile controls
+let touchSensitivity = 2.0; // Increased for better responsiveness
+
 // Weapon setup
 let weapon;
 let machineGun;
@@ -439,7 +448,7 @@ if (isMobileDevice()) {
     // Variables to track touch movement for aiming
     let lastTouchX = 0;
     let lastTouchY = 0;
-    let touchSensitivity = 0.5; // Adjust sensitivity as needed
+    // touchSensitivity is now defined globally
     
     // Variables for long press detection (for pickup/interact)
     let touchStartTime = 0;
@@ -499,15 +508,8 @@ if (isMobileDevice()) {
                 }
             }
             
-            // Update camera rotation based on touch movement
-            // This mimics the mouse movement for aiming
-            camera.rotation.y -= deltaX * 0.01 * touchSensitivity;
-            
-            // Limit vertical rotation to avoid flipping
-            const verticalRotation = camera.rotation.x - deltaY * 0.01 * touchSensitivity;
-            camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, verticalRotation));
-            
-            // Update last touch position
+            // We no longer update camera rotation here since we're using the aiming joystick
+            // Just update the last touch position for jump detection
             lastTouchX = touchX;
             lastTouchY = touchY;
         }
@@ -6260,7 +6262,7 @@ function isMobileDevice() {
 
 // Initialize and handle the virtual joystick
 function initJoystick() {
-    // Create joystick with nipplejs
+    // Create movement joystick with nipplejs
     joystick = nipplejs.create({
         zone: document.getElementById('joystick-container'),
         mode: 'static',
@@ -6274,9 +6276,27 @@ function initJoystick() {
         lockY: false
     });
     
-    // Handle joystick events
+    // Create aiming joystick with nipplejs
+    aimJoystick = nipplejs.create({
+        zone: document.getElementById('aim-joystick-container'),
+        mode: 'static',
+        position: { left: '50%', top: '50%' },
+        color: 'rgba(255, 255, 255, 0.8)',
+        size: 150,
+        dynamicPage: true,
+        fadeTime: 100,
+        restOpacity: 0.8,
+        lockX: false,
+        lockY: false
+    });
+    
+    // Handle movement joystick events
     joystick.on('start', function() {
         isJoystickActive = true;
+        
+        // Hide the move icon when joystick is active
+        const moveIcon = document.getElementById('move-icon');
+        if (moveIcon) moveIcon.style.display = 'none';
         
         // Resume audio context on joystick interaction
         if (audioContext && audioContext.state === "suspended") {
@@ -6299,6 +6319,10 @@ function initJoystick() {
         moveBackward = false;
         moveLeft = false;
         moveRight = false;
+        
+        // Show the move icon again when joystick is released
+        const moveIcon = document.getElementById('move-icon');
+        if (moveIcon) moveIcon.style.display = 'block';
     });
     
     joystick.on('move', function(evt, data) {
@@ -6324,6 +6348,75 @@ function initJoystick() {
             joystickIntensity = 0;
         }
     });
+    
+    // Handle aiming joystick events
+    aimJoystick.on('start', function() {
+        isAimJoystickActive = true;
+        
+        // Hide the aim icon when joystick is active
+        const aimIcon = document.getElementById('aim-icon');
+        if (aimIcon) aimIcon.style.display = 'none';
+        
+        // Start shooting when joystick is touched
+        if (!gameState.menuOpen && !gameState.gameOver && controls.isLocked) {
+            gameState.isMouseDown = true;
+            shoot();
+            
+            // Add haptic feedback for shooting
+            if (navigator.vibrate && gameState.vibrationEnabled) {
+                navigator.vibrate(25);
+            }
+        }
+        
+        // Resume audio context on joystick interaction
+        if (audioContext && audioContext.state === "suspended") {
+            audioContext.resume();
+        }
+    });
+    
+    aimJoystick.on('end', function() {
+        isAimJoystickActive = false;
+        aimJoystickMovement = { x: 0, y: 0 };
+        
+        // Stop shooting when joystick is released
+        gameState.isMouseDown = false;
+        
+        // Show the aim icon again when joystick is released
+        const aimIcon = document.getElementById('aim-icon');
+        if (aimIcon) aimIcon.style.display = 'block';
+    });
+    
+    aimJoystick.on('move', function(evt, data) {
+        // Get joystick movement data
+        const force = Math.min(data.force, 1); // Normalize force between 0 and 1
+        const angle = data.angle.radian;
+        
+        // Calculate x and y components
+        aimJoystickMovement.x = Math.cos(angle) * force;
+        aimJoystickMovement.y = Math.sin(angle) * force;
+        
+        // Store intensity for camera rotation speed
+        aimJoystickIntensity = force;
+        
+        // Apply camera rotation by dispatching a synthetic mouse event
+        if (controls.isLocked) {
+            // Calculate movement based on joystick position and sensitivity
+            // Invert both X and Y for correct directional control
+            const movementX = aimJoystickMovement.x * 10 * touchSensitivity; // Removed negative sign to fix left/right
+            const movementY = -aimJoystickMovement.y * 10 * touchSensitivity; // Keep negative for correct up/down
+            
+            // Create and dispatch a synthetic mouse event
+            const mouseEvent = new MouseEvent('mousemove', {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                movementX: movementX,
+                movementY: movementY
+            });
+            
+            document.dispatchEvent(mouseEvent);
+        }
+    });
 }
 
 // Custom function to handle exiting pointer lock for both mobile and desktop
@@ -6345,17 +6438,23 @@ function setupMobileOptimizations() {
     
     // Add touch event for shooting
     document.addEventListener('touchstart', function(e) {
-        // Don't trigger shooting if touching joystick area or UI elements
+        // Don't trigger shooting if touching joystick areas or UI elements
         const joystickArea = document.getElementById('joystick-container');
+        const aimJoystickArea = document.getElementById('aim-joystick-container');
         const joystickRect = joystickArea.getBoundingClientRect();
+        const aimJoystickRect = aimJoystickArea.getBoundingClientRect();
         
-        // Check if touch is in joystick area
+        // Check if touch is in either joystick area
         for (let i = 0; i < e.touches.length; i++) {
             const touch = e.touches[i];
-            if (touch.clientX >= joystickRect.left && 
+            if ((touch.clientX >= joystickRect.left && 
                 touch.clientX <= joystickRect.right && 
                 touch.clientY >= joystickRect.top && 
-                touch.clientY <= joystickRect.bottom) {
+                touch.clientY <= joystickRect.bottom) ||
+                (touch.clientX >= aimJoystickRect.left && 
+                touch.clientX <= aimJoystickRect.right && 
+                touch.clientY >= aimJoystickRect.top && 
+                touch.clientY <= aimJoystickRect.bottom)) {
                 return; // Don't shoot if touching joystick
             }
         }
@@ -6363,7 +6462,7 @@ function setupMobileOptimizations() {
         // Don't shoot if game is paused or over
         if (gameState.menuOpen || gameState.gameOver) return;
         
-        // Start shooting
+        // Start shooting (for touches outside joystick areas)
         gameState.isMouseDown = true;
         
         // Add haptic feedback for shooting
@@ -6378,13 +6477,6 @@ function setupMobileOptimizations() {
             gameState.isMouseDown = false;
         }
     });
-    
-    // Remove double-tap detection for reloading
-    // Instead, we'll rely on auto-reload when out of bullets
-    // This is already handled in the animate loop with:
-    // if (gameState.isMouseDown && gameState.ammo <= 0 && !gameState.isReloading) {
-    //     reload();
-    // }
     
     // Add setting for vibration
     gameState.vibrationEnabled = true;
