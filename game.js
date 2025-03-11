@@ -48,7 +48,8 @@ const gameState = {
     gameStarted: false,
     menuOpen: false,
     soundEnabled: true, // Initialize sound to be enabled by default
-    clickedGameOverButton: false // Flag to track if a game over button was clicked
+    clickedGameOverButton: false, // Flag to track if a game over button was clicked
+    vibrationEnabled: true // Added vibration setting
 };
 
 // DOM elements
@@ -111,6 +112,7 @@ let velocity = new THREE.Vector3();
 let joystick = null;
 let joystickMovement = { x: 0, y: 0 };
 let isJoystickActive = false;
+let joystickIntensity = 0; // Track joystick force for variable movement speed
 
 // Weapon setup
 let weapon;
@@ -1962,6 +1964,10 @@ function init() {
     // Initialize virtual joystick for mobile
     if (isMobileDevice()) {
         initJoystick();
+        // Apply mobile-specific optimizations
+        setupMobileOptimizations();
+        // Reduce shadow quality for better performance
+        reduceShadowQualityForMobile();
     }
     
     // Create weapons
@@ -3131,6 +3137,11 @@ function animate() {
         // Check if player is holding mouse button and needs to auto-reload
         if (gameState.isMouseDown && gameState.ammo <= 0 && !gameState.isReloading) {
             reload();
+            
+            // Add haptic feedback for auto-reload on mobile
+            if (isMobileDevice() && navigator.vibrate && gameState.vibrationEnabled) {
+                navigator.vibrate([20, 50, 20]);
+            }
         }
         
         // Handle continuous firing for all weapons on mobile or machine gun on any device
@@ -3198,8 +3209,10 @@ function animate() {
         // Set velocity based on direction
         if (isJoystickActive && isMobileDevice()) {
             // Smoother movement with joystick - use the actual values for variable speed
-            velocity.z = direction.z * 5.0;
-            velocity.x = direction.x * 5.0;
+            // Use joystickIntensity to control movement speed based on how far the joystick is pushed
+            const speedMultiplier = 5.0 * joystickIntensity;
+            velocity.z = direction.z * speedMultiplier;
+            velocity.x = direction.x * speedMultiplier;
         } else {
             // Keyboard movement (binary on/off)
             if (moveForward || moveBackward) velocity.z = direction.z * 5.0;
@@ -6253,7 +6266,12 @@ function initJoystick() {
         mode: 'static',
         position: { left: '50%', top: '50%' },
         color: 'white',
-        size: 120
+        size: 150, // Increased from 120 for better touch area
+        dynamicPage: true,
+        fadeTime: 100,
+        restOpacity: 0.8, // Increased opacity for better visibility
+        lockX: false,
+        lockY: false
     });
     
     // Handle joystick events
@@ -6265,6 +6283,11 @@ function initJoystick() {
             audioContext.resume().then(() => {
                 console.log('AudioContext resumed by joystick interaction');
             });
+        }
+        
+        // Add haptic feedback for devices that support it
+        if (navigator.vibrate && gameState.vibrationEnabled) {
+            navigator.vibrate(15); // Short vibration on joystick start
         }
     });
     
@@ -6293,6 +6316,13 @@ function initJoystick() {
         moveBackward = joystickMovement.y > 0.3;  // Down direction (positive Y)
         moveLeft = joystickMovement.x < -0.3;     // Left direction
         moveRight = joystickMovement.x > 0.3;     // Right direction
+        
+        // Adjust movement speed based on joystick force for more precise control
+        if (moveForward || moveBackward || moveLeft || moveRight) {
+            joystickIntensity = force;
+        } else {
+            joystickIntensity = 0;
+        }
     });
 }
 
@@ -6309,6 +6339,79 @@ function safeExitPointerLock() {
     }
 }
 
+// Add mobile-specific optimizations
+function setupMobileOptimizations() {
+    if (!isMobileDevice()) return;
+    
+    // Add touch event for shooting
+    document.addEventListener('touchstart', function(e) {
+        // Don't trigger shooting if touching joystick area or UI elements
+        const joystickArea = document.getElementById('joystick-container');
+        const joystickRect = joystickArea.getBoundingClientRect();
+        
+        // Check if touch is in joystick area
+        for (let i = 0; i < e.touches.length; i++) {
+            const touch = e.touches[i];
+            if (touch.clientX >= joystickRect.left && 
+                touch.clientX <= joystickRect.right && 
+                touch.clientY >= joystickRect.top && 
+                touch.clientY <= joystickRect.bottom) {
+                return; // Don't shoot if touching joystick
+            }
+        }
+        
+        // Don't shoot if game is paused or over
+        if (gameState.menuOpen || gameState.gameOver) return;
+        
+        // Start shooting
+        gameState.isMouseDown = true;
+        
+        // Add haptic feedback for shooting
+        if (navigator.vibrate && gameState.vibrationEnabled) {
+            navigator.vibrate(25);
+        }
+    });
+    
+    document.addEventListener('touchend', function(e) {
+        // If no touches left, stop shooting
+        if (e.touches.length === 0) {
+            gameState.isMouseDown = false;
+        }
+    });
+    
+    // Remove double-tap detection for reloading
+    // Instead, we'll rely on auto-reload when out of bullets
+    // This is already handled in the animate loop with:
+    // if (gameState.isMouseDown && gameState.ammo <= 0 && !gameState.isReloading) {
+    //     reload();
+    // }
+    
+    // Add setting for vibration
+    gameState.vibrationEnabled = true;
+    
+    // Add performance optimizations for mobile
+    // Safely check if scene and scene.fog exist before modifying
+    if (scene) {
+        // Create fog if it doesn't exist
+        if (!scene.fog) {
+            scene.fog = new THREE.Fog(0x000000, 20, 80);
+        } else {
+            // Modify existing fog
+            scene.fog.near = 20; // Reduce fog distance for better performance
+            scene.fog.far = 80;
+        }
+    }
+    
+    // Note: We can't access dirLight here as it's not in scope
+    // Mobile shadow quality is handled elsewhere
+    
+    // Listen for vibration toggle event
+    document.addEventListener('toggleVibration', function(e) {
+        gameState.vibrationEnabled = e.detail.enabled;
+        console.log('Vibration ' + (gameState.vibrationEnabled ? 'enabled' : 'disabled'));
+    });
+}
+
 // Listen for the custom enableAudio event
 document.addEventListener('enableAudio', function() {
     // Resume audio context when the user explicitly enables audio
@@ -6319,3 +6422,14 @@ document.addEventListener('enableAudio', function() {
     
     console.log('Audio explicitly enabled by user');
 });
+
+// Function to reduce shadow quality for mobile devices
+function reduceShadowQualityForMobile() {
+    if (!isMobileDevice()) return;
+    
+    // Reduce shadow map size for better performance
+    if (dirLight && dirLight.shadow) {
+        dirLight.shadow.mapSize.width = 1024;  // Reduced from 2048
+        dirLight.shadow.mapSize.height = 1024; // Reduced from 2048
+    }
+}

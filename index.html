@@ -582,20 +582,122 @@
         /* Virtual joystick styles */
         #joystick-container {
             position: absolute;
-            bottom: 80px;
+            bottom: 100px;
             left: 20px;
-            width: 120px;
-            height: 120px;
+            width: 150px;
+            height: 150px;
             pointer-events: auto;
-            display: none; /* Hidden by default, shown only on mobile */
+            display: none;
             z-index: 100;
-            opacity: 0.7;
+            opacity: 0.8;
         }
         
         /* Make joystick visible only on mobile */
         @media (max-width: 600px) {
             #joystick-container {
                 display: block;
+            }
+            
+            #health, #ammo {
+                font-size: 28px;
+                padding: 8px;
+                background-color: rgba(0, 0, 0, 0.4);
+                border-radius: 8px;
+            }
+            
+            #bullets {
+                font-size: 22px;
+                padding: 8px;
+                background-color: rgba(0, 0, 0, 0.4);
+                border-radius: 8px;
+                bottom: 60px;
+            }
+            
+            #enemies {
+                font-size: 22px;
+                padding: 8px 12px;
+            }
+            
+            #crosshair {
+                font-size: 32px;
+            }
+            
+            #restartButton, #submitScoreButton, #viewLeaderboardButton, 
+            #startGameButton, #leaderboardButton, #enableAudioButton {
+                margin-top: 20px;
+                padding: 15px 25px;
+                min-height: 50px;
+            }
+            
+            .menu-button {
+                margin: 15px auto;
+                min-height: 50px;
+            }
+            
+            #soundToggle {
+                font-size: 36px;
+                padding: 12px 20px;
+                margin: 10px;
+            }
+        }
+        
+        /* Fullscreen button styles */
+        #fullscreenButton {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 24px;
+            cursor: pointer;
+            z-index: 100;
+            pointer-events: auto;
+            display: none;
+        }
+        
+        @media (max-width: 600px) {
+            #fullscreenButton {
+                display: block;
+            }
+        }
+        
+        /* Extra small screens - further refinements */
+        @media (max-width: 375px) {
+            #health {
+                bottom: 25px;
+                left: 15px;
+            }
+            
+            #ammo {
+                bottom: 25px;
+                right: 15px;
+            }
+            
+            #bullets {
+                bottom: 70px;
+                right: 15px;
+            }
+            
+            #joystick-container {
+                bottom: 110px;
+                left: 15px;
+                width: 130px;
+                height: 130px;
+            }
+            
+            .menu-button, #restartButton, #submitScoreButton, #viewLeaderboardButton {
+                padding: 12px 20px;
+                font-size: 18px;
+            }
+            
+            #fullscreenButton {
+                top: 15px;
+                left: 15px;
+                padding: 6px 10px;
+                font-size: 20px;
             }
         }
     </style>
@@ -630,7 +732,7 @@
                         <p style="margin: 5px 0;">• Touch and drag to aim</p>
                         <p style="margin: 5px 0;">• Tap to shoot, hold to keep firing</p>
                         <p style="margin: 5px 0;">• Auto-reload when low on ammo</p>
-                        <p style="margin: 5px 0;">• Tap the popup to pick up items</p>
+                        <p style="margin: 5px 0;">• Tap popup to pick up items</p>
                         <p style="margin: 5px 0;">• Two-finger touch to zoom (sniper)</p>
                         <p style="margin: 5px 0;">• Swipe up to jump</p>
                     </div>
@@ -663,6 +765,7 @@
     </div>
 
     <div id="ui">
+        <button id="fullscreenButton">⛶</button>
         <div id="crosshair">+</div>
         <div id="health">❤️ 100</div>
         <div id="ammo">🔫 10/10</div>
@@ -723,6 +826,11 @@
             <p><strong>Sound:</strong> <span id="soundToggle" style="margin-left: 10px;">🔊</span></p>
         </div>
         
+        <!-- Vibration toggle for mobile devices only -->
+        <div id="vibrationToggleSection" class="menu-section" style="display: none;">
+            <p><strong>Vibration:</strong> <span id="vibrationToggle" style="margin-left: 10px;">📳</span></p>
+        </div>
+        
         <div class="menu-section" style="display: flex; flex-direction: column; align-items: center;">
             <button id="resumeButton" class="menu-button">Resume Game</button>
             <button id="restartMenuButton" class="menu-button">Restart Game</button>
@@ -748,6 +856,45 @@
             if (isMobile) {
                 document.getElementById('desktopMenuControls').style.display = 'none';
                 document.getElementById('mobileMenuControls').style.display = 'block';
+                
+                // Show vibration toggle for mobile devices
+                const vibrationToggleSection = document.getElementById('vibrationToggleSection');
+                if (vibrationToggleSection) {
+                    vibrationToggleSection.style.display = 'block';
+                }
+                
+                // Setup vibration toggle functionality
+                const vibrationToggle = document.getElementById('vibrationToggle');
+                if (vibrationToggle) {
+                    // Initialize based on current setting (default is enabled)
+                    let vibrationEnabled = true;
+                    
+                    // Update toggle display
+                    function updateVibrationToggle() {
+                        vibrationToggle.textContent = vibrationEnabled ? '📳' : '📴';
+                        vibrationToggle.style.backgroundColor = vibrationEnabled ? '#4CAF50' : '#f44336';
+                        
+                        // Dispatch custom event to update game state
+                        const event = new CustomEvent('toggleVibration', { 
+                            detail: { enabled: vibrationEnabled } 
+                        });
+                        document.dispatchEvent(event);
+                        
+                        // Provide haptic feedback when enabling
+                        if (vibrationEnabled && navigator.vibrate) {
+                            navigator.vibrate(50);
+                        }
+                    }
+                    
+                    // Add click handler
+                    vibrationToggle.addEventListener('click', function() {
+                        vibrationEnabled = !vibrationEnabled;
+                        updateVibrationToggle();
+                    });
+                    
+                    // Initialize toggle display
+                    updateVibrationToggle();
+                }
                 
                 // Also update the ESC hint for mobile
                 const escHint = document.querySelector('#menuScreen > p:last-of-type');
@@ -776,6 +923,60 @@
                     // Remove this listener after first click
                     document.removeEventListener('click', autoEnableAudio);
                 }, { once: true });
+                
+                // Setup fullscreen functionality for mobile
+                const fullscreenButton = document.getElementById('fullscreenButton');
+                if (fullscreenButton) {
+                    fullscreenButton.addEventListener('click', function() {
+                        if (!document.fullscreenElement) {
+                            // Enter fullscreen
+                            if (document.documentElement.requestFullscreen) {
+                                document.documentElement.requestFullscreen();
+                            } else if (document.documentElement.webkitRequestFullscreen) {
+                                document.documentElement.webkitRequestFullscreen();
+                            } else if (document.documentElement.msRequestFullscreen) {
+                                document.documentElement.msRequestFullscreen();
+                            }
+                            fullscreenButton.textContent = '⤢';
+                        } else {
+                            // Exit fullscreen
+                            if (document.exitFullscreen) {
+                                document.exitFullscreen();
+                            } else if (document.webkitExitFullscreen) {
+                                document.webkitExitFullscreen();
+                            } else if (document.msExitFullscreen) {
+                                document.msExitFullscreen();
+                            }
+                            fullscreenButton.textContent = '⛶';
+                        }
+                    });
+                    
+                    // Update button icon when fullscreen state changes
+                    document.addEventListener('fullscreenchange', function() {
+                        fullscreenButton.textContent = document.fullscreenElement ? '⤢' : '⛶';
+                    });
+                }
+                
+                // Add meta viewport tag to prevent pinch zoom on iOS
+                const metaViewport = document.querySelector('meta[name="viewport"]');
+                if (metaViewport) {
+                    metaViewport.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+                }
+                
+                // Add touch-action CSS to prevent browser handling of touch gestures
+                const style = document.createElement('style');
+                style.textContent = `
+                    body, canvas {
+                        touch-action: none;
+                        -webkit-touch-callout: none;
+                        -webkit-user-select: none;
+                        -khtml-user-select: none;
+                        -moz-user-select: none;
+                        -ms-user-select: none;
+                        user-select: none;
+                    }
+                `;
+                document.head.appendChild(style);
             }
             
             // Add event listener for the enable audio button
