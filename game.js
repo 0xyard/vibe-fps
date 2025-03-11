@@ -2103,6 +2103,14 @@ function hideTitleScreen() {
 
 // Start the game from title screen
 function startGame() {
+    // Save player name from title screen input
+    const playerNameInput = document.getElementById('titlePlayerNameInput');
+    if (playerNameInput && playerNameInput.value.trim() !== '') {
+        import('./leaderboard.js').then(module => {
+            module.savePlayerName(playerNameInput.value.trim());
+        });
+    }
+    
     // Hide title screen
     hideTitleScreen();
     
@@ -2817,86 +2825,72 @@ function checkGameOver() {
         // Pre-fill player name input if available and auto-submit score
         import('./leaderboard.js').then(module => {
             const playerName = module.getPlayerName();
-            const playerNameInput = document.getElementById('titlePlayerNameInput');
+            const playerNameInput = document.getElementById('playerNameInput');
             const score = gameState.score;
             const wave = gameState.level;
             const statusElement = document.getElementById('scoreSubmitStatus');
             const submitButton = document.getElementById('submitScoreButton');
             
-            // Hide submit button initially - we'll show it only if auto-submission fails
-            if (submitButton) {
-                submitButton.style.display = 'none';
-            }
-            
-            if (playerNameInput) {
-                if (playerName) {
+            // Always auto-submit if we have a player name
+            if (playerName && playerName.trim() !== '') {
+                // Set the hidden input value
+                if (playerNameInput) {
                     playerNameInput.value = playerName;
-                    
-                    // Auto-submit score if we have a player name
-                    if (submitButton && playerName.trim() !== '') {
-                        // Show loading state
-                        submitButton.disabled = true;
-                        submitButton.textContent = 'SUBMITTING...';
-                        submitButton.style.backgroundColor = '#666';
-                        
-                        // Submit the score
-                        module.submitScore(playerName, score, wave).then(result => {
-                            if (result.success) {
-                                if (statusElement) {
-                                    statusElement.textContent = 'Score submitted successfully!';
-                                    statusElement.style.color = '#4CAF50';
-                                    statusElement.style.display = 'block';
-                                }
-                                
-                                // Keep submit button hidden on success
-                                if (submitButton) {
-                                    submitButton.style.display = 'none';
-                                }
-                            } else {
-                                if (statusElement) {
-                                    statusElement.textContent = `Error: ${result.error}. Try submitting manually.`;
-                                    statusElement.style.color = '#ff3a3a';
-                                    statusElement.style.display = 'block';
-                                }
-                                
-                                // Show and re-enable the submit button on failure
-                                if (submitButton) {
-                                    submitButton.style.display = 'block';
-                                    submitButton.disabled = false;
-                                    submitButton.textContent = 'SUBMIT SCORE';
-                                    submitButton.style.backgroundColor = '#3a86ff';
-                                }
-                            }
-                        }).catch(error => {
-                            // Handle any unexpected errors
-                            console.error('Error submitting score:', error);
-                            
-                            if (statusElement) {
-                                statusElement.textContent = 'An unexpected error occurred. Please try submitting manually.';
-                                statusElement.style.color = '#ff3a3a';
-                                statusElement.style.display = 'block';
-                            }
-                            
-                            // Show and re-enable the submit button on error
-                            if (submitButton) {
-                                submitButton.style.display = 'block';
-                                submitButton.disabled = false;
-                                submitButton.textContent = 'SUBMIT SCORE';
-                                submitButton.style.backgroundColor = '#3a86ff';
-                            }
-                        });
-                    }
-                } else {
-                    // No player name, show the submit button
-                    if (submitButton) {
-                        submitButton.style.display = 'block';
-                    }
                 }
                 
-                // Focus on the input field after a short delay to ensure the screen is visible
-                setTimeout(() => {
-                    playerNameInput.focus();
-                }, 100);
+                // Show loading state
+                if (submitButton) {
+                    submitButton.disabled = true;
+                    submitButton.textContent = 'SUBMITTING...';
+                    submitButton.style.backgroundColor = '#666';
+                }
+                
+                // Submit the score
+                module.submitScore(playerName, score, wave).then(result => {
+                    if (result.success) {
+                        if (statusElement) {
+                            statusElement.textContent = 'Score submitted successfully!';
+                            statusElement.style.color = '#4CAF50';
+                            statusElement.style.display = 'block';
+                        }
+                        
+                        // Keep submit button hidden on success
+                        if (submitButton) {
+                            submitButton.style.display = 'none';
+                        }
+                    } else {
+                        if (statusElement) {
+                            statusElement.textContent = `Error: ${result.error}. Try submitting manually.`;
+                            statusElement.style.color = '#ff3a3a';
+                            statusElement.style.display = 'block';
+                        }
+                        
+                        // Show and re-enable the submit button on failure
+                        if (submitButton) {
+                            submitButton.style.display = 'block';
+                            submitButton.disabled = false;
+                            submitButton.textContent = 'SUBMIT SCORE';
+                            submitButton.style.backgroundColor = '#3a86ff';
+                        }
+                    }
+                }).catch(error => {
+                    // Handle any unexpected errors
+                    console.error('Error submitting score:', error);
+                    
+                    if (statusElement) {
+                        statusElement.textContent = 'An unexpected error occurred. Please try submitting manually.';
+                        statusElement.style.color = '#ff3a3a';
+                        statusElement.style.display = 'block';
+                    }
+                    
+                    // Show and re-enable the submit button on error
+                    if (submitButton) {
+                        submitButton.style.display = 'block';
+                        submitButton.disabled = false;
+                        submitButton.textContent = 'SUBMIT SCORE';
+                        submitButton.style.backgroundColor = '#3a86ff';
+                    }
+                });
             }
         });
         
@@ -2964,23 +2958,32 @@ function checkGameOver() {
                 return; // Score already submitted
             }
             
-            const playerNameInput = document.getElementById('playerNameInput');
-            const playerName = playerNameInput ? playerNameInput.value.trim() : '';
-            const score = parseInt(document.getElementById('finalScore').textContent, 10) || 0;
-            const wave = parseInt(document.getElementById('finalLevel').textContent, 10) || 1;
-            const statusElement = document.getElementById('scoreSubmitStatus');
-            
-            if (!playerName) {
-                if (statusElement) {
-                    statusElement.textContent = 'Please enter your name';
-                    statusElement.style.color = '#ff3a3a';
-                    statusElement.style.display = 'block';
-                }
-                return;
-            }
-            
             // Import the necessary functions from leaderboard.js
             import('./leaderboard.js').then(module => {
+                // Get player name from input or stored value
+                const playerNameInput = document.getElementById('playerNameInput');
+                let playerName = '';
+                
+                if (playerNameInput && playerNameInput.value.trim() !== '') {
+                    playerName = playerNameInput.value.trim();
+                } else {
+                    // If input is empty or hidden, use stored player name
+                    playerName = module.getPlayerName() || '';
+                }
+                
+                const score = parseInt(document.getElementById('finalScore').textContent, 10) || 0;
+                const wave = parseInt(document.getElementById('finalLevel').textContent, 10) || 1;
+                const statusElement = document.getElementById('scoreSubmitStatus');
+                
+                if (!playerName) {
+                    if (statusElement) {
+                        statusElement.textContent = 'No player name found';
+                        statusElement.style.color = '#ff3a3a';
+                        statusElement.style.display = 'block';
+                    }
+                    return;
+                }
+                
                 // Save the player name
                 module.savePlayerName(playerName);
                 

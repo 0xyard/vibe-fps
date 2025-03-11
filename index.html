@@ -85,6 +85,10 @@
         }
         #submitScoreButton {
             background: #3a86ff;
+            margin: 0 auto;
+            flex-shrink: 0;
+            width: auto;
+            white-space: nowrap;
         }
         #viewLeaderboardButton {
             background: #2667cc;
@@ -477,26 +481,6 @@
             gap: 10px;
         }
         
-        #playerNameInput {
-            background: rgba(255, 255, 255, 0.9);
-            border: 2px solid #3a86ff;
-            border-radius: 5px;
-            padding: 10px 15px;
-            font-size: 18px;
-            font-family: 'Courier New', monospace;
-            flex: 1;
-            min-width: 0;
-            text-align: center;
-            margin: 0;
-        }
-        
-        #submitScoreButton {
-            margin: 0;
-            flex-shrink: 0;
-            width: auto;
-            white-space: nowrap;
-        }
-        
         /* Style for disabled submit button */
         #submitScoreButton:disabled {
             background-color: #666;
@@ -547,9 +531,10 @@
             padding: 10px 15px;
             font-size: 18px;
             font-family: 'Courier New', monospace;
-            width: 100%;
+            flex: 1;
+            min-width: 0;
             text-align: center;
-            box-sizing: border-box;
+            margin: 0;
         }
         
         /* Extra small screens */
@@ -843,6 +828,7 @@
                 <p>Wave: <span id="finalLevel">1</span></p>
             </div>
             <div class="submit-container">
+                <input type="text" id="playerNameInput" placeholder="Enter your name" style="display: none;">
                 <button id="submitScoreButton">SUBMIT SCORE</button>
             </div>
             <span id="scoreSubmitStatus"></span>
