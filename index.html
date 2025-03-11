@@ -578,12 +578,34 @@
                 padding: 8px;
             }
         }
+        
+        /* Virtual joystick styles */
+        #joystick-container {
+            position: absolute;
+            bottom: 80px;
+            left: 20px;
+            width: 120px;
+            height: 120px;
+            pointer-events: auto;
+            display: none; /* Hidden by default, shown only on mobile */
+            z-index: 100;
+            opacity: 0.7;
+        }
+        
+        /* Make joystick visible only on mobile */
+        @media (max-width: 600px) {
+            #joystick-container {
+                display: block;
+            }
+        }
     </style>
     <!-- Vercel Web Analytics -->
     <script>
         window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
     </script>
     <script defer src="/_vercel/insights/script.js"></script>
+    <!-- NippleJS for virtual joystick -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
 </head>
 <body>
     <div id="titleScreen">
@@ -604,6 +626,7 @@
                 </div>
                 <div id="mobileInstructions" style="display: none; margin-top: 15px;">
                     <div style="background-color: rgba(58, 134, 255, 0.2); padding: 10px; border-radius: 5px;">
+                        <p style="margin: 5px 0;">• Use the virtual joystick to move</p>
                         <p style="margin: 5px 0;">• Touch and drag to aim</p>
                         <p style="margin: 5px 0;">• Tap to shoot, hold to keep firing</p>
                         <p style="margin: 5px 0;">• Auto-reload when low on ammo</p>
@@ -644,6 +667,7 @@
         <div id="ammo">🔫 10/10</div>
         <div id="bullets">🔹 Bullets: 30</div>
         <div id="enemies">👾 0</div>
+        <div id="joystick-container"></div>
         <div id="gameOver">
             <h1>GAME OVER!</h1>
             <div class="game-stats">
@@ -685,6 +709,7 @@
                     <p>🔍 <strong>E</strong> - Interact</p>
                 </div>
                 <div id="mobileMenuControls" style="display: none; text-align: left;">
+                    <p>• Use the virtual joystick to move</p>
                     <p>• Touch and drag to aim</p>
                     <p>• Tap to shoot, hold to keep firing</p>
                     <p>• Auto-reload when low on ammo</p>

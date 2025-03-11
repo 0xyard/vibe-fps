@@ -107,6 +107,11 @@ let moveRight = false;
 let canJump = false;
 let velocity = new THREE.Vector3();
 
+// Joystick variables
+let joystick = null;
+let joystickMovement = { x: 0, y: 0 };
+let isJoystickActive = false;
+
 // Weapon setup
 let weapon;
 let machineGun;
@@ -1930,6 +1935,11 @@ function init() {
     roundNotification = createRoundNotification();
     scoreDisplay = createScoreDisplay();
     
+    // Initialize virtual joystick for mobile
+    if (isMobileDevice()) {
+        initJoystick();
+    }
+    
     // Create weapons
     weapon = createWeapon();
     machineGun = createMachineGun();
@@ -3151,15 +3161,32 @@ function animate() {
         
         // Handle movement
         const direction = new THREE.Vector3();
-        direction.z = Number(moveForward) - Number(moveBackward);
-        direction.x = Number(moveRight) - Number(moveLeft);
+        
+        if (isJoystickActive && isMobileDevice()) {
+            // Use joystick values for mobile
+            direction.z = joystickMovement.y; // Positive Y is backward, negative Y is forward
+            direction.x = joystickMovement.x;
+        } else {
+            // Use keyboard for desktop
+            direction.z = Number(moveForward) - Number(moveBackward);
+            direction.x = Number(moveRight) - Number(moveLeft);
+        }
+        
         direction.normalize();
         
-        if (moveForward || moveBackward) velocity.z = direction.z * 5.0;
-        else velocity.z = 0;
-        
-        if (moveLeft || moveRight) velocity.x = direction.x * 5.0;
-        else velocity.x = 0;
+        // Set velocity based on direction
+        if (isJoystickActive && isMobileDevice()) {
+            // Smoother movement with joystick - use the actual values for variable speed
+            velocity.z = direction.z * 5.0;
+            velocity.x = direction.x * 5.0;
+        } else {
+            // Keyboard movement (binary on/off)
+            if (moveForward || moveBackward) velocity.z = direction.z * 5.0;
+            else velocity.z = 0;
+            
+            if (moveLeft || moveRight) velocity.x = direction.x * 5.0;
+            else velocity.x = 0;
+        }
         
         // Store original position for collision detection
         const originalPosition = camera.position.clone();
@@ -6195,6 +6222,50 @@ setTimeout(checkSoundsLoaded, 5000); // Check after 5 seconds
 // Add mobile device detection utility
 function isMobileDevice() {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+// Initialize and handle the virtual joystick
+function initJoystick() {
+    // Create joystick with nipplejs
+    joystick = nipplejs.create({
+        zone: document.getElementById('joystick-container'),
+        mode: 'static',
+        position: { left: '50%', top: '50%' },
+        color: 'white',
+        size: 120
+    });
+    
+    // Handle joystick events
+    joystick.on('start', function() {
+        isJoystickActive = true;
+    });
+    
+    joystick.on('end', function() {
+        isJoystickActive = false;
+        joystickMovement = { x: 0, y: 0 };
+        // Reset movement flags when joystick is released
+        moveForward = false;
+        moveBackward = false;
+        moveLeft = false;
+        moveRight = false;
+    });
+    
+    joystick.on('move', function(evt, data) {
+        // Get joystick movement data
+        const force = Math.min(data.force, 1); // Normalize force between 0 and 1
+        const angle = data.angle.radian;
+        
+        // Calculate x and y components
+        joystickMovement.x = Math.cos(angle) * force;
+        joystickMovement.y = Math.sin(angle) * force;
+        
+        // Set movement flags based on joystick position
+        // Note: In joystick, up (negative Y) means forward, down (positive Y) means backward
+        moveForward = joystickMovement.y < -0.3;  // Up direction (negative Y)
+        moveBackward = joystickMovement.y > 0.3;  // Down direction (positive Y)
+        moveLeft = joystickMovement.x < -0.3;     // Left direction
+        moveRight = joystickMovement.x > 0.3;     // Right direction
+    });
 }
 
 // Custom function to handle exiting pointer lock for both mobile and desktop
