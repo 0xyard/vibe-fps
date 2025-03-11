@@ -277,6 +277,11 @@
             #submitScoreButton {
                 width: 100%;
             }
+            #ammo {
+                pointer-events: none;
+                background-color: transparent;
+                border: none;
+            }
         }
         #menuScreen {
             position: absolute;
@@ -588,7 +593,7 @@
             
             <div class="instruction-section">
                 <h3>HOW TO PLAY</h3>
-                <div class="instruction-grid">
+                <div id="desktopControls" class="instruction-grid">
                     <p>🎮 <strong>WASD</strong> - Move around</p>
                     <p>🖱️ <strong>Mouse</strong> - Aim</p>
                     <p>🔫 <strong>Left Click</strong> - Shoot</p>
@@ -597,7 +602,26 @@
                     <p>🎒 <strong>E</strong> - Pick up items</p>
                     <p>⏸️ <strong>ESC</strong> - Pause game</p>
                 </div>
+                <div id="mobileInstructions" style="display: none; margin-top: 15px;">
+                    <div style="background-color: rgba(58, 134, 255, 0.2); padding: 10px; border-radius: 5px;">
+                        <p style="margin: 5px 0;">• Touch and drag to aim</p>
+                        <p style="margin: 5px 0;">• Tap to shoot, hold to keep firing</p>
+                        <p style="margin: 5px 0;">• Auto-reload when low on ammo</p>
+                        <p style="margin: 5px 0;">• Tap the popup to pick up items</p>
+                        <p style="margin: 5px 0;">• Two-finger touch to zoom (sniper)</p>
+                        <p style="margin: 5px 0;">• Swipe up to jump</p>
+                    </div>
+                </div>
             </div>
+            
+            <script>
+                // Show appropriate controls based on device type
+                if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+                    // On mobile devices
+                    document.getElementById('desktopControls').style.display = 'none';
+                    document.getElementById('mobileInstructions').style.display = 'block';
+                }
+            </script>
             
             <div class="username-section">
                 <h3>YOUR PLAYER NAME</h3>
@@ -619,7 +643,7 @@
         <div id="health">❤️ 100</div>
         <div id="ammo">🔫 10/10</div>
         <div id="bullets">🔹 Bullets: 30</div>
-        <div id="enemies">👾 Enemies: 0</div>
+        <div id="enemies">👾 0</div>
         <div id="gameOver">
             <h1>GAME OVER!</h1>
             <div class="game-stats">
@@ -654,11 +678,17 @@
         <div class="menu-section">
             <div class="controls-info">
                 <p><strong>Controls:</strong></p>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; text-align: left;">
+                <div id="desktopMenuControls" style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; text-align: left;">
                     <p>🎮 <strong>WASD</strong> - Move</p>
                     <p>🖱️ <strong>Click</strong> - Shoot</p>
                     <p>🔄 <strong>R</strong> - Reload</p>
                     <p>🔍 <strong>E</strong> - Interact</p>
+                </div>
+                <div id="mobileMenuControls" style="display: none; text-align: left;">
+                    <p>• Touch and drag to aim</p>
+                    <p>• Tap to shoot, hold to keep firing</p>
+                    <p>• Auto-reload when low on ammo</p>
+                    <p>• Tap the popup to pick up items</p>
                 </div>
             </div>
         </div>
@@ -684,5 +714,20 @@
         }
     </script>
     <script type="module" src="game.js"></script>
+    <script>
+        // Show appropriate menu controls based on device type
+        document.addEventListener('DOMContentLoaded', function() {
+            if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+                document.getElementById('desktopMenuControls').style.display = 'none';
+                document.getElementById('mobileMenuControls').style.display = 'block';
+                
+                // Also update the ESC hint for mobile
+                const escHint = document.querySelector('#menuScreen > p:last-of-type');
+                if (escHint) {
+                    escHint.textContent = 'Tap outside menu to close';
+                }
+            }
+        });
+    </script>
 </body>
 </html> 

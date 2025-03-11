@@ -424,6 +424,102 @@ document.addEventListener('mousedown', (event) => {
     }
 });
 
+// Touch event handlers for mobile devices
+if (isMobileDevice()) {
+    // Variables to track touch movement for aiming
+    let lastTouchX = 0;
+    let lastTouchY = 0;
+    let touchSensitivity = 0.5; // Adjust sensitivity as needed
+    
+    // Variables for long press detection (for pickup/interact)
+    let touchStartTime = 0;
+    let longPressTimer = null;
+    const longPressDuration = 500; // milliseconds
+    
+    // Handle touch start (equivalent to mousedown)
+    renderer.domElement.addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        
+        // Store the initial touch position
+        if (e.touches.length > 0) {
+            lastTouchX = e.touches[0].clientX;
+            lastTouchY = e.touches[0].clientY;
+        }
+        
+        // If game is active, trigger shoot
+        if (controls.isLocked && !gameState.gameOver && !gameState.menuOpen) {
+            // Don't trigger shoot if tapping on pickup hint
+            if (e.target && e.target.id === 'pickupHint') {
+                return;
+            }
+            
+            gameState.isMouseDown = true;
+            shoot();
+        } else if (!controls.isLocked && !gameState.gameOver) {
+            // Lock controls if not already locked
+            controls.lock();
+        }
+    }, { passive: false });
+    
+    // Handle touch move (for aiming)
+    renderer.domElement.addEventListener('touchmove', function(e) {
+        e.preventDefault();
+        
+        if (e.touches.length > 0 && controls.isLocked) {
+            // Calculate touch movement delta
+            const touchX = e.touches[0].clientX;
+            const touchY = e.touches[0].clientY;
+            
+            const deltaX = touchX - lastTouchX;
+            const deltaY = touchY - lastTouchY;
+            
+            // Detect swipe up for jump
+            if (deltaY < -50 && Math.abs(deltaX) < Math.abs(deltaY)) {
+                // Swipe up detected - trigger jump
+                if (canJump === true) {
+                    velocity.y += 350;
+                    canJump = false;
+                }
+            }
+            
+            // Update camera rotation based on touch movement
+            // This mimics the mouse movement for aiming
+            camera.rotation.y -= deltaX * 0.01 * touchSensitivity;
+            
+            // Limit vertical rotation to avoid flipping
+            const verticalRotation = camera.rotation.x - deltaY * 0.01 * touchSensitivity;
+            camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, verticalRotation));
+            
+            // Update last touch position
+            lastTouchX = touchX;
+            lastTouchY = touchY;
+        }
+    }, { passive: false });
+    
+    // Handle touch end (equivalent to mouseup)
+    renderer.domElement.addEventListener('touchend', function(e) {
+        e.preventDefault();
+        
+        // Stop shooting when touch ends
+        gameState.isMouseDown = false;
+        
+        // If using audio context, resume it on first interaction
+        if (audioContext && audioContext.state === "suspended") {
+            audioContext.resume();
+        }
+    }, { passive: false });
+    
+    // Handle multi-touch for special actions
+    renderer.domElement.addEventListener('touchstart', function(e) {
+        // If we have two or more touches, treat as right-click (for zoom with sniper)
+        if (e.touches.length >= 2 && controls.isLocked && !gameState.gameOver) {
+            if (gameState.currentGunType === 'sniperRifle') {
+                toggleZoom();
+            }
+        }
+    }, { passive: false });
+}
+
 // Sound toggle
 if (soundToggleEl) {
     soundToggleEl.addEventListener('click', () => {
@@ -938,6 +1034,12 @@ function shoot() {
     // Check if we're reloading or menu is open
     if (gameState.isReloading || gameState.menuOpen) return;
     
+    // For mobile devices, auto-reload when ammo is low (1 or 0)
+    if (isMobileDevice() && gameState.ammo <= 1) {
+        reload();
+        return;
+    }
+    
     // Check if we have ammo for the current weapon
     if (gameState.ammo <= 0) {
         // Auto reload if out of ammo and player is still trying to shoot
@@ -1328,7 +1430,7 @@ function updateUI() {
     bulletsEl.style.display = 'none';
     
     // Update enemies remaining counter
-    enemiesEl.textContent = `👾 Enemies: ${enemies.length}`;
+    enemiesEl.textContent = `👾 ${enemies.length}`;
     
     // Update score display
     if (scoreDisplay) {
@@ -1767,9 +1869,20 @@ function createScoreDisplay() {
     const scoreEl = document.createElement('div');
     scoreEl.id = 'scoreDisplay';
     scoreEl.style.position = 'absolute';
-    scoreEl.style.top = '20px';
-    scoreEl.style.left = '50%';
-    scoreEl.style.transform = 'translateX(-50%)';
+    
+    // Position differently based on device type
+    if (isMobileDevice()) {
+        // For mobile: upper left corner
+        scoreEl.style.top = '20px';
+        scoreEl.style.left = '20px';
+        scoreEl.style.transform = 'none';
+    } else {
+        // For desktop: centered at top
+        scoreEl.style.top = '20px';
+        scoreEl.style.left = '50%';
+        scoreEl.style.transform = 'translateX(-50%)';
+    }
+    
     scoreEl.style.fontSize = '24px';
     scoreEl.style.color = 'white';
     scoreEl.style.textShadow = '1px 1px 2px #000000';
@@ -2989,11 +3102,39 @@ function animate() {
             reload();
         }
         
-        // If using machine gun and holding mouse button, continue shooting
-        if (gameState.currentGunType === 'machineGun' && gameState.isMouseDown && 
-            gameState.ammo > 0 && !gameState.isReloading && time - lastShootTime > 100) {
-            shoot();
-            lastShootTime = time;
+        // Handle continuous firing for all weapons on mobile or machine gun on any device
+        if (gameState.isMouseDown && gameState.ammo > 0 && !gameState.isReloading) {
+            const currentTime = performance.now();
+            let fireRate = 0;
+            
+            // Set fire rate based on weapon type
+            if (gameState.currentGunType === 'machineGun') {
+                fireRate = 100; // Fast fire rate for machine gun
+            } else if (isMobileDevice()) {
+                // On mobile, enable continuous firing for all weapons with appropriate rates
+                switch (gameState.currentGunType) {
+                    case 'pistol':
+                        fireRate = 300; // Slower fire rate for pistol
+                        break;
+                    case 'sniperRifle':
+                        fireRate = 800; // Very slow fire rate for sniper
+                        break;
+                    case 'shotgun':
+                        fireRate = 600; // Slow fire rate for shotgun
+                        break;
+                    case 'rocketLauncher':
+                        fireRate = 1000; // Slowest fire rate for rocket launcher
+                        break;
+                    default:
+                        fireRate = 400; // Default fire rate
+                }
+            }
+            
+            // Fire weapon if enough time has passed since last shot
+            if (fireRate > 0 && currentTime - lastShootTime > fireRate) {
+                shoot();
+                lastShootTime = currentTime;
+            }
         }
         
         // Check for nearby pickups and show hints
@@ -3938,6 +4079,30 @@ function showPickupHint(gunType) {
         hintEl.style.fontSize = '16px';
         hintEl.style.textAlign = 'center';
         hintEl.style.zIndex = '1000';
+        
+        // Make it tappable on mobile
+        if (isMobileDevice()) {
+            hintEl.style.pointerEvents = 'auto';
+            hintEl.style.cursor = 'pointer';
+            hintEl.style.backgroundColor = 'rgba(58, 134, 255, 0.7)';
+            hintEl.style.border = '2px solid white';
+            
+            // Add click event listener for mobile
+            hintEl.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // Call interact function
+                interactWithPickups();
+                
+                // Visual feedback
+                this.style.backgroundColor = 'rgba(0, 255, 0, 0.7)';
+                setTimeout(() => {
+                    this.style.backgroundColor = 'rgba(58, 134, 255, 0.7)';
+                }, 200);
+            });
+        }
+        
         document.body.appendChild(hintEl);
     }
     
@@ -3962,7 +4127,13 @@ function showPickupHint(gunType) {
         default: gunName = "Unknown Weapon";
     }
     
-    hintEl.textContent = `Press E to pick up ${gunName}`;
+    // Different text for mobile vs desktop
+    if (isMobileDevice()) {
+        hintEl.innerHTML = `<strong>TAP HERE</strong> to pick up ${gunName}`;
+    } else {
+        hintEl.textContent = `Press E to pick up ${gunName}`;
+    }
+    
     hintEl.style.display = 'block';
     
     // Store the current time to hide the hint if no pickups are nearby
