@@ -48,7 +48,8 @@ const gameState = {
     gameStarted: false,
     menuOpen: false,
     soundEnabled: true, // Initialize sound to be enabled by default
-    clickedGameOverButton: false // Flag to track if a game over button was clicked
+    clickedGameOverButton: false, // Flag to track if a game over button was clicked
+    vibrationEnabled: true // Added vibration setting
 };
 
 // DOM elements
@@ -107,6 +108,21 @@ let moveRight = false;
 let canJump = false;
 let velocity = new THREE.Vector3();
 
+// Joystick variables
+let joystick = null;
+let joystickMovement = { x: 0, y: 0 };
+let isJoystickActive = false;
+let joystickIntensity = 0; // Track joystick force for variable movement speed
+
+// Aiming joystick variables
+let aimJoystick = null;
+let aimJoystickMovement = { x: 0, y: 0 };
+let isAimJoystickActive = false;
+let aimJoystickIntensity = 0;
+
+// Touch sensitivity for mobile controls
+let touchSensitivity = 2.0; // Increased for better responsiveness
+
 // Weapon setup
 let weapon;
 let machineGun;
@@ -164,6 +180,9 @@ scene.add(hemiLight);
 // Audio setup
 const audioListener = new THREE.AudioListener();
 camera.add(audioListener);
+
+// Get the audio context from the listener for later use
+const audioContext = audioListener.context;
 
 // Sound effects
 const soundEffects = {
@@ -307,7 +326,7 @@ controls.addEventListener('lock', () => {
     // This prevents the game from restarting when clicking on the game over screen buttons
     if (gameState.gameOver && !gameState.clickedGameOverButton) {
         // If game is over, immediately exit pointer lock to prevent accidental restart
-        document.exitPointerLock();
+        safeExitPointerLock();
         return;
     }
     
@@ -423,6 +442,102 @@ document.addEventListener('mousedown', (event) => {
         }
     }
 });
+
+// Touch event handlers for mobile devices
+if (isMobileDevice()) {
+    // Variables to track touch movement for aiming
+    let lastTouchX = 0;
+    let lastTouchY = 0;
+    // touchSensitivity is now defined globally
+    
+    // Variables for long press detection (for pickup/interact)
+    let touchStartTime = 0;
+    let longPressTimer = null;
+    const longPressDuration = 500; // milliseconds
+    
+    // Handle touch start (equivalent to mousedown)
+    renderer.domElement.addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        
+        // Resume audio context on user interaction
+        if (audioContext && audioContext.state === "suspended") {
+            audioContext.resume().then(() => {
+                console.log('AudioContext resumed successfully');
+            });
+        }
+        
+        // Store the initial touch position
+        if (e.touches.length > 0) {
+            lastTouchX = e.touches[0].clientX;
+            lastTouchY = e.touches[0].clientY;
+        }
+        
+        // If game is active, trigger shoot
+        if (controls.isLocked && !gameState.gameOver && !gameState.menuOpen) {
+            // Don't trigger shoot if tapping on pickup hint
+            if (e.target && e.target.id === 'pickupHint') {
+                return;
+            }
+            
+            gameState.isMouseDown = true;
+            shoot();
+        } else if (!controls.isLocked && !gameState.gameOver) {
+            // Lock controls if not already locked
+            controls.lock();
+        }
+    }, { passive: false });
+    
+    // Handle touch move (for aiming)
+    renderer.domElement.addEventListener('touchmove', function(e) {
+        e.preventDefault();
+        
+        if (e.touches.length > 0 && controls.isLocked) {
+            // Calculate touch movement delta
+            const touchX = e.touches[0].clientX;
+            const touchY = e.touches[0].clientY;
+            
+            const deltaX = touchX - lastTouchX;
+            const deltaY = touchY - lastTouchY;
+            
+            // Detect swipe up for jump
+            if (deltaY < -50 && Math.abs(deltaX) < Math.abs(deltaY)) {
+                // Swipe up detected - trigger jump
+                if (canJump === true) {
+                    velocity.y += 350;
+                    canJump = false;
+                }
+            }
+            
+            // We no longer update camera rotation here since we're using the aiming joystick
+            // Just update the last touch position for jump detection
+            lastTouchX = touchX;
+            lastTouchY = touchY;
+        }
+    }, { passive: false });
+    
+    // Handle touch end (equivalent to mouseup)
+    renderer.domElement.addEventListener('touchend', function(e) {
+        e.preventDefault();
+        
+        // Stop shooting when touch ends
+        gameState.isMouseDown = false;
+        
+        // If using audio context, resume it on first interaction
+        if (audioContext && audioContext.state === "suspended") {
+            audioContext.resume();
+        }
+    }, { passive: false });
+    
+    // Handle multi-touch for special actions
+    renderer.domElement.addEventListener('touchstart', function(e) {
+        // If we have two or more touches, treat as right-click (for zoom with sniper)
+        if (e.touches.length >= 2 && controls.isLocked && !gameState.gameOver) {
+            if (gameState.currentGunType === 'sniperRifle') {
+                toggleZoom();
+            }
+        }
+    }, { passive: false });
+}
 
 // Sound toggle
 if (soundToggleEl) {
@@ -938,6 +1053,12 @@ function shoot() {
     // Check if we're reloading or menu is open
     if (gameState.isReloading || gameState.menuOpen) return;
     
+    // For mobile devices, auto-reload when ammo is low (1 or 0)
+    if (isMobileDevice() && gameState.ammo <= 1) {
+        reload();
+        return;
+    }
+    
     // Check if we have ammo for the current weapon
     if (gameState.ammo <= 0) {
         // Auto reload if out of ammo and player is still trying to shoot
@@ -1328,7 +1449,7 @@ function updateUI() {
     bulletsEl.style.display = 'none';
     
     // Update enemies remaining counter
-    enemiesEl.textContent = `👾 Enemies: ${enemies.length}`;
+    enemiesEl.textContent = `👾 ${enemies.length}`;
     
     // Update score display
     if (scoreDisplay) {
@@ -1767,9 +1888,20 @@ function createScoreDisplay() {
     const scoreEl = document.createElement('div');
     scoreEl.id = 'scoreDisplay';
     scoreEl.style.position = 'absolute';
-    scoreEl.style.top = '20px';
-    scoreEl.style.left = '50%';
-    scoreEl.style.transform = 'translateX(-50%)';
+    
+    // Position differently based on device type
+    if (isMobileDevice()) {
+        // For mobile: upper left corner
+        scoreEl.style.top = '20px';
+        scoreEl.style.left = '20px';
+        scoreEl.style.transform = 'none';
+    } else {
+        // For desktop: centered at top
+        scoreEl.style.top = '20px';
+        scoreEl.style.left = '50%';
+        scoreEl.style.transform = 'translateX(-50%)';
+    }
+    
     scoreEl.style.fontSize = '24px';
     scoreEl.style.color = 'white';
     scoreEl.style.textShadow = '1px 1px 2px #000000';
@@ -1803,6 +1935,17 @@ function showRoundNotification(round) {
     }, 3000);
 }
 
+// Function to check and resume audio context
+function resumeAudioContext() {
+    if (audioContext && audioContext.state === "suspended") {
+        audioContext.resume().then(() => {
+            console.log('AudioContext resumed successfully');
+        }).catch(error => {
+            console.error('Error resuming AudioContext:', error);
+        });
+    }
+}
+
 // Initialize the game
 function init() {
     if (!checkWebGLSupport()) {
@@ -1813,9 +1956,21 @@ function init() {
     // Check if this is the first visit
     checkFirstVisit();
     
+    // Try to resume audio context
+    resumeAudioContext();
+    
     // Initialize UI elements
     roundNotification = createRoundNotification();
     scoreDisplay = createScoreDisplay();
+    
+    // Initialize virtual joystick for mobile
+    if (isMobileDevice()) {
+        initJoystick();
+        // Apply mobile-specific optimizations
+        setupMobileOptimizations();
+        // Reduce shadow quality for better performance
+        reduceShadowQualityForMobile();
+    }
     
     // Create weapons
     weapon = createWeapon();
@@ -1930,19 +2085,38 @@ function hideTitleScreen() {
     
     // Restore controls
     controls.lock = PointerLockControls.prototype.lock;
+    
+    // Override lock method to check for mobile devices
+    const originalLock = controls.lock;
+    controls.lock = function() {
+        if (isMobileDevice()) {
+            // For mobile devices, just set isLocked to true without requesting pointer lock
+            this.isLocked = true;
+            this.dispatchEvent({ type: 'lock' });
+            return true;
+        } else {
+            // For desktop, use the original lock method
+            return originalLock.apply(this, arguments);
+        }
+    };
 }
 
 // Start the game from title screen
 function startGame() {
-    // Save the player name from the title screen
+    // Save player name from title screen input
     const playerNameInput = document.getElementById('titlePlayerNameInput');
-    if (playerNameInput && playerNameInput.value.trim()) {
+    if (playerNameInput && playerNameInput.value.trim() !== '') {
         import('./leaderboard.js').then(module => {
             module.savePlayerName(playerNameInput.value.trim());
         });
     }
     
+    // Hide title screen
     hideTitleScreen();
+    
+    // Try to resume audio context on game start
+    resumeAudioContext();
+    
     gameState.gameStarted = true;
     
     // Lock controls to start the game
@@ -2651,86 +2825,72 @@ function checkGameOver() {
         // Pre-fill player name input if available and auto-submit score
         import('./leaderboard.js').then(module => {
             const playerName = module.getPlayerName();
-            const playerNameInput = document.getElementById('titlePlayerNameInput');
+            const playerNameInput = document.getElementById('playerNameInput');
             const score = gameState.score;
             const wave = gameState.level;
             const statusElement = document.getElementById('scoreSubmitStatus');
             const submitButton = document.getElementById('submitScoreButton');
             
-            // Hide submit button initially - we'll show it only if auto-submission fails
-            if (submitButton) {
-                submitButton.style.display = 'none';
-            }
-            
-            if (playerNameInput) {
-                if (playerName) {
+            // Always auto-submit if we have a player name
+            if (playerName && playerName.trim() !== '') {
+                // Set the hidden input value
+                if (playerNameInput) {
                     playerNameInput.value = playerName;
-                    
-                    // Auto-submit score if we have a player name
-                    if (submitButton && playerName.trim() !== '') {
-                        // Show loading state
-                        submitButton.disabled = true;
-                        submitButton.textContent = 'SUBMITTING...';
-                        submitButton.style.backgroundColor = '#666';
-                        
-                        // Submit the score
-                        module.submitScore(playerName, score, wave).then(result => {
-                            if (result.success) {
-                                if (statusElement) {
-                                    statusElement.textContent = 'Score submitted successfully!';
-                                    statusElement.style.color = '#4CAF50';
-                                    statusElement.style.display = 'block';
-                                }
-                                
-                                // Keep submit button hidden on success
-                                if (submitButton) {
-                                    submitButton.style.display = 'none';
-                                }
-                            } else {
-                                if (statusElement) {
-                                    statusElement.textContent = `Error: ${result.error}. Try submitting manually.`;
-                                    statusElement.style.color = '#ff3a3a';
-                                    statusElement.style.display = 'block';
-                                }
-                                
-                                // Show and re-enable the submit button on failure
-                                if (submitButton) {
-                                    submitButton.style.display = 'block';
-                                    submitButton.disabled = false;
-                                    submitButton.textContent = 'SUBMIT SCORE';
-                                    submitButton.style.backgroundColor = '#3a86ff';
-                                }
-                            }
-                        }).catch(error => {
-                            // Handle any unexpected errors
-                            console.error('Error submitting score:', error);
-                            
-                            if (statusElement) {
-                                statusElement.textContent = 'An unexpected error occurred. Please try submitting manually.';
-                                statusElement.style.color = '#ff3a3a';
-                                statusElement.style.display = 'block';
-                            }
-                            
-                            // Show and re-enable the submit button on error
-                            if (submitButton) {
-                                submitButton.style.display = 'block';
-                                submitButton.disabled = false;
-                                submitButton.textContent = 'SUBMIT SCORE';
-                                submitButton.style.backgroundColor = '#3a86ff';
-                            }
-                        });
-                    }
-                } else {
-                    // No player name, show the submit button
-                    if (submitButton) {
-                        submitButton.style.display = 'block';
-                    }
                 }
                 
-                // Focus on the input field after a short delay to ensure the screen is visible
-                setTimeout(() => {
-                    playerNameInput.focus();
-                }, 100);
+                // Show loading state
+                if (submitButton) {
+                    submitButton.disabled = true;
+                    submitButton.textContent = 'SUBMITTING...';
+                    submitButton.style.backgroundColor = '#666';
+                }
+                
+                // Submit the score
+                module.submitScore(playerName, score, wave).then(result => {
+                    if (result.success) {
+                        if (statusElement) {
+                            statusElement.textContent = 'Score submitted successfully!';
+                            statusElement.style.color = '#4CAF50';
+                            statusElement.style.display = 'block';
+                        }
+                        
+                        // Keep submit button hidden on success
+                        if (submitButton) {
+                            submitButton.style.display = 'none';
+                        }
+                    } else {
+                        if (statusElement) {
+                            statusElement.textContent = `Error: ${result.error}. Try submitting manually.`;
+                            statusElement.style.color = '#ff3a3a';
+                            statusElement.style.display = 'block';
+                        }
+                        
+                        // Show and re-enable the submit button on failure
+                        if (submitButton) {
+                            submitButton.style.display = 'block';
+                            submitButton.disabled = false;
+                            submitButton.textContent = 'SUBMIT SCORE';
+                            submitButton.style.backgroundColor = '#3a86ff';
+                        }
+                    }
+                }).catch(error => {
+                    // Handle any unexpected errors
+                    console.error('Error submitting score:', error);
+                    
+                    if (statusElement) {
+                        statusElement.textContent = 'An unexpected error occurred. Please try submitting manually.';
+                        statusElement.style.color = '#ff3a3a';
+                        statusElement.style.display = 'block';
+                    }
+                    
+                    // Show and re-enable the submit button on error
+                    if (submitButton) {
+                        submitButton.style.display = 'block';
+                        submitButton.disabled = false;
+                        submitButton.textContent = 'SUBMIT SCORE';
+                        submitButton.style.backgroundColor = '#3a86ff';
+                    }
+                });
             }
         });
         
@@ -2740,7 +2900,7 @@ function checkGameOver() {
         
         // Completely disable pointer lock controls
         controls.enabled = false;
-        document.exitPointerLock();
+        safeExitPointerLock();
         
         // Add a click event listener to the entire document to prevent pointer lock
         const preventLock = (e) => {
@@ -2751,7 +2911,7 @@ function checkGameOver() {
                 e.target.id !== 'viewLeaderboardButton' &&
                 e.target.id !== 'playerNameInput') {
                 e.stopPropagation();
-                document.exitPointerLock();
+                safeExitPointerLock();
             }
         };
         
@@ -2798,23 +2958,32 @@ function checkGameOver() {
                 return; // Score already submitted
             }
             
-            const playerNameInput = document.getElementById('playerNameInput');
-            const playerName = playerNameInput ? playerNameInput.value.trim() : '';
-            const score = parseInt(document.getElementById('finalScore').textContent, 10) || 0;
-            const wave = parseInt(document.getElementById('finalLevel').textContent, 10) || 1;
-            const statusElement = document.getElementById('scoreSubmitStatus');
-            
-            if (!playerName) {
-                if (statusElement) {
-                    statusElement.textContent = 'Please enter your name';
-                    statusElement.style.color = '#ff3a3a';
-                    statusElement.style.display = 'block';
-                }
-                return;
-            }
-            
             // Import the necessary functions from leaderboard.js
             import('./leaderboard.js').then(module => {
+                // Get player name from input or stored value
+                const playerNameInput = document.getElementById('playerNameInput');
+                let playerName = '';
+                
+                if (playerNameInput && playerNameInput.value.trim() !== '') {
+                    playerName = playerNameInput.value.trim();
+                } else {
+                    // If input is empty or hidden, use stored player name
+                    playerName = module.getPlayerName() || '';
+                }
+                
+                const score = parseInt(document.getElementById('finalScore').textContent, 10) || 0;
+                const wave = parseInt(document.getElementById('finalLevel').textContent, 10) || 1;
+                const statusElement = document.getElementById('scoreSubmitStatus');
+                
+                if (!playerName) {
+                    if (statusElement) {
+                        statusElement.textContent = 'No player name found';
+                        statusElement.style.color = '#ff3a3a';
+                        statusElement.style.display = 'block';
+                    }
+                    return;
+                }
+                
                 // Save the player name
                 module.savePlayerName(playerName);
                 
@@ -2973,13 +3142,46 @@ function animate() {
         // Check if player is holding mouse button and needs to auto-reload
         if (gameState.isMouseDown && gameState.ammo <= 0 && !gameState.isReloading) {
             reload();
+            
+            // Add haptic feedback for auto-reload on mobile
+            if (isMobileDevice() && navigator.vibrate && gameState.vibrationEnabled) {
+                navigator.vibrate([20, 50, 20]);
+            }
         }
         
-        // If using machine gun and holding mouse button, continue shooting
-        if (gameState.currentGunType === 'machineGun' && gameState.isMouseDown && 
-            gameState.ammo > 0 && !gameState.isReloading && time - lastShootTime > 100) {
-            shoot();
-            lastShootTime = time;
+        // Handle continuous firing for all weapons on mobile or machine gun on any device
+        if (gameState.isMouseDown && gameState.ammo > 0 && !gameState.isReloading) {
+            const currentTime = performance.now();
+            let fireRate = 0;
+            
+            // Set fire rate based on weapon type
+            if (gameState.currentGunType === 'machineGun') {
+                fireRate = 100; // Fast fire rate for machine gun
+            } else if (isMobileDevice()) {
+                // On mobile, enable continuous firing for all weapons with appropriate rates
+                switch (gameState.currentGunType) {
+                    case 'pistol':
+                        fireRate = 300; // Slower fire rate for pistol
+                        break;
+                    case 'sniperRifle':
+                        fireRate = 800; // Very slow fire rate for sniper
+                        break;
+                    case 'shotgun':
+                        fireRate = 600; // Slow fire rate for shotgun
+                        break;
+                    case 'rocketLauncher':
+                        fireRate = 1000; // Slowest fire rate for rocket launcher
+                        break;
+                    default:
+                        fireRate = 400; // Default fire rate
+                }
+            }
+            
+            // Fire weapon if enough time has passed since last shot
+            if (fireRate > 0 && currentTime - lastShootTime > fireRate) {
+                shoot();
+                lastShootTime = currentTime;
+            }
         }
         
         // Check for nearby pickups and show hints
@@ -2996,15 +3198,34 @@ function animate() {
         
         // Handle movement
         const direction = new THREE.Vector3();
-        direction.z = Number(moveForward) - Number(moveBackward);
-        direction.x = Number(moveRight) - Number(moveLeft);
+        
+        if (isJoystickActive && isMobileDevice()) {
+            // Use joystick values for mobile
+            direction.z = joystickMovement.y; // Positive Y is backward, negative Y is forward
+            direction.x = joystickMovement.x;
+        } else {
+            // Use keyboard for desktop
+            direction.z = Number(moveForward) - Number(moveBackward);
+            direction.x = Number(moveRight) - Number(moveLeft);
+        }
+        
         direction.normalize();
         
-        if (moveForward || moveBackward) velocity.z = direction.z * 5.0;
-        else velocity.z = 0;
-        
-        if (moveLeft || moveRight) velocity.x = direction.x * 5.0;
-        else velocity.x = 0;
+        // Set velocity based on direction
+        if (isJoystickActive && isMobileDevice()) {
+            // Smoother movement with joystick - use the actual values for variable speed
+            // Use joystickIntensity to control movement speed based on how far the joystick is pushed
+            const speedMultiplier = 5.0 * joystickIntensity;
+            velocity.z = direction.z * speedMultiplier;
+            velocity.x = direction.x * speedMultiplier;
+        } else {
+            // Keyboard movement (binary on/off)
+            if (moveForward || moveBackward) velocity.z = direction.z * 5.0;
+            else velocity.z = 0;
+            
+            if (moveLeft || moveRight) velocity.x = direction.x * 5.0;
+            else velocity.x = 0;
+        }
         
         // Store original position for collision detection
         const originalPosition = camera.position.clone();
@@ -3924,6 +4145,30 @@ function showPickupHint(gunType) {
         hintEl.style.fontSize = '16px';
         hintEl.style.textAlign = 'center';
         hintEl.style.zIndex = '1000';
+        
+        // Make it tappable on mobile
+        if (isMobileDevice()) {
+            hintEl.style.pointerEvents = 'auto';
+            hintEl.style.cursor = 'pointer';
+            hintEl.style.backgroundColor = 'rgba(58, 134, 255, 0.7)';
+            hintEl.style.border = '2px solid white';
+            
+            // Add click event listener for mobile
+            hintEl.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // Call interact function
+                interactWithPickups();
+                
+                // Visual feedback
+                this.style.backgroundColor = 'rgba(0, 255, 0, 0.7)';
+                setTimeout(() => {
+                    this.style.backgroundColor = 'rgba(58, 134, 255, 0.7)';
+                }, 200);
+            });
+        }
+        
         document.body.appendChild(hintEl);
     }
     
@@ -3948,7 +4193,13 @@ function showPickupHint(gunType) {
         default: gunName = "Unknown Weapon";
     }
     
-    hintEl.textContent = `Press E to pick up ${gunName}`;
+    // Different text for mobile vs desktop
+    if (isMobileDevice()) {
+        hintEl.innerHTML = `<strong>TAP HERE</strong> to pick up ${gunName}`;
+    } else {
+        hintEl.textContent = `Press E to pick up ${gunName}`;
+    }
+    
     hintEl.style.display = 'block';
     
     // Store the current time to hide the hint if no pickups are nearby
@@ -5971,7 +6222,7 @@ document.body.addEventListener('click', (e) => {
             e.target.id !== 'submitScoreButton' && 
             e.target.id !== 'viewLeaderboardButton') {
             e.stopPropagation();
-            document.exitPointerLock();
+            safeExitPointerLock();
         }
     }
 });
@@ -6006,3 +6257,274 @@ function checkSoundsLoaded() {
 
 // Call this function after a delay to check if sounds are loaded
 setTimeout(checkSoundsLoaded, 5000); // Check after 5 seconds
+
+// Add mobile device detection utility
+function isMobileDevice() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+// Initialize and handle the virtual joystick
+function initJoystick() {
+    // Create movement joystick with nipplejs
+    joystick = nipplejs.create({
+        zone: document.getElementById('joystick-container'),
+        mode: 'static',
+        position: { left: '50%', top: '50%' },
+        color: 'white',
+        size: 150, // Increased from 120 for better touch area
+        dynamicPage: true,
+        fadeTime: 100,
+        restOpacity: 0.8, // Increased opacity for better visibility
+        lockX: false,
+        lockY: false
+    });
+    
+    // Create aiming joystick with nipplejs
+    aimJoystick = nipplejs.create({
+        zone: document.getElementById('aim-joystick-container'),
+        mode: 'static',
+        position: { left: '50%', top: '50%' },
+        color: 'rgba(255, 255, 255, 0.8)',
+        size: 150,
+        dynamicPage: true,
+        fadeTime: 100,
+        restOpacity: 0.8,
+        lockX: false,
+        lockY: false
+    });
+    
+    // Handle movement joystick events
+    joystick.on('start', function() {
+        isJoystickActive = true;
+        
+        // Hide the move icon when joystick is active
+        const moveIcon = document.getElementById('move-icon');
+        if (moveIcon) moveIcon.style.display = 'none';
+        
+        // Resume audio context on joystick interaction
+        if (audioContext && audioContext.state === "suspended") {
+            audioContext.resume().then(() => {
+                console.log('AudioContext resumed by joystick interaction');
+            });
+        }
+        
+        // Add haptic feedback for devices that support it
+        if (navigator.vibrate && gameState.vibrationEnabled) {
+            navigator.vibrate(15); // Short vibration on joystick start
+        }
+    });
+    
+    joystick.on('end', function() {
+        isJoystickActive = false;
+        joystickMovement = { x: 0, y: 0 };
+        // Reset movement flags when joystick is released
+        moveForward = false;
+        moveBackward = false;
+        moveLeft = false;
+        moveRight = false;
+        
+        // Show the move icon again when joystick is released
+        const moveIcon = document.getElementById('move-icon');
+        if (moveIcon) moveIcon.style.display = 'block';
+    });
+    
+    joystick.on('move', function(evt, data) {
+        // Get joystick movement data
+        const force = Math.min(data.force, 1); // Normalize force between 0 and 1
+        const angle = data.angle.radian;
+        
+        // Calculate x and y components
+        joystickMovement.x = Math.cos(angle) * force;
+        joystickMovement.y = Math.sin(angle) * force;
+        
+        // Set movement flags based on joystick position
+        // Note: In joystick, up (negative Y) means forward, down (positive Y) means backward
+        moveForward = joystickMovement.y < -0.3;  // Up direction (negative Y)
+        moveBackward = joystickMovement.y > 0.3;  // Down direction (positive Y)
+        moveLeft = joystickMovement.x < -0.3;     // Left direction
+        moveRight = joystickMovement.x > 0.3;     // Right direction
+        
+        // Adjust movement speed based on joystick force for more precise control
+        if (moveForward || moveBackward || moveLeft || moveRight) {
+            joystickIntensity = force;
+        } else {
+            joystickIntensity = 0;
+        }
+    });
+    
+    // Handle aiming joystick events
+    aimJoystick.on('start', function() {
+        isAimJoystickActive = true;
+        
+        // Hide the aim icon when joystick is active
+        const aimIcon = document.getElementById('aim-icon');
+        if (aimIcon) aimIcon.style.display = 'none';
+        
+        // Start shooting when joystick is touched
+        if (!gameState.menuOpen && !gameState.gameOver && controls.isLocked) {
+            gameState.isMouseDown = true;
+            shoot();
+            
+            // Add haptic feedback for shooting
+            if (navigator.vibrate && gameState.vibrationEnabled) {
+                navigator.vibrate(25);
+            }
+        }
+        
+        // Resume audio context on joystick interaction
+        if (audioContext && audioContext.state === "suspended") {
+            audioContext.resume();
+        }
+    });
+    
+    aimJoystick.on('end', function() {
+        isAimJoystickActive = false;
+        aimJoystickMovement = { x: 0, y: 0 };
+        
+        // Stop shooting when joystick is released
+        gameState.isMouseDown = false;
+        
+        // Show the aim icon again when joystick is released
+        const aimIcon = document.getElementById('aim-icon');
+        if (aimIcon) aimIcon.style.display = 'block';
+    });
+    
+    aimJoystick.on('move', function(evt, data) {
+        // Get joystick movement data
+        const force = Math.min(data.force, 1); // Normalize force between 0 and 1
+        const angle = data.angle.radian;
+        
+        // Calculate x and y components
+        aimJoystickMovement.x = Math.cos(angle) * force;
+        aimJoystickMovement.y = Math.sin(angle) * force;
+        
+        // Store intensity for camera rotation speed
+        aimJoystickIntensity = force;
+        
+        // Apply camera rotation by dispatching a synthetic mouse event
+        if (controls.isLocked) {
+            // Calculate movement based on joystick position and sensitivity
+            // Invert both X and Y for correct directional control
+            const movementX = aimJoystickMovement.x * 10 * touchSensitivity; // Removed negative sign to fix left/right
+            const movementY = -aimJoystickMovement.y * 10 * touchSensitivity; // Keep negative for correct up/down
+            
+            // Create and dispatch a synthetic mouse event
+            const mouseEvent = new MouseEvent('mousemove', {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                movementX: movementX,
+                movementY: movementY
+            });
+            
+            document.dispatchEvent(mouseEvent);
+        }
+    });
+}
+
+// Custom function to handle exiting pointer lock for both mobile and desktop
+function safeExitPointerLock() {
+    if (!isMobileDevice() && document.pointerLockElement) {
+        document.exitPointerLock();
+    }
+    
+    // For mobile devices, we need to manually update the controls state
+    if (isMobileDevice() && controls && controls.isLocked) {
+        controls.isLocked = false;
+        controls.dispatchEvent({ type: 'unlock' });
+    }
+}
+
+// Add mobile-specific optimizations
+function setupMobileOptimizations() {
+    if (!isMobileDevice()) return;
+    
+    // Add touch event for shooting
+    document.addEventListener('touchstart', function(e) {
+        // Don't trigger shooting if touching joystick areas or UI elements
+        const joystickArea = document.getElementById('joystick-container');
+        const aimJoystickArea = document.getElementById('aim-joystick-container');
+        const joystickRect = joystickArea.getBoundingClientRect();
+        const aimJoystickRect = aimJoystickArea.getBoundingClientRect();
+        
+        // Check if touch is in either joystick area
+        for (let i = 0; i < e.touches.length; i++) {
+            const touch = e.touches[i];
+            if ((touch.clientX >= joystickRect.left && 
+                touch.clientX <= joystickRect.right && 
+                touch.clientY >= joystickRect.top && 
+                touch.clientY <= joystickRect.bottom) ||
+                (touch.clientX >= aimJoystickRect.left && 
+                touch.clientX <= aimJoystickRect.right && 
+                touch.clientY >= aimJoystickRect.top && 
+                touch.clientY <= aimJoystickRect.bottom)) {
+                return; // Don't shoot if touching joystick
+            }
+        }
+        
+        // Don't shoot if game is paused or over
+        if (gameState.menuOpen || gameState.gameOver) return;
+        
+        // Start shooting (for touches outside joystick areas)
+        gameState.isMouseDown = true;
+        
+        // Add haptic feedback for shooting
+        if (navigator.vibrate && gameState.vibrationEnabled) {
+            navigator.vibrate(25);
+        }
+    });
+    
+    document.addEventListener('touchend', function(e) {
+        // If no touches left, stop shooting
+        if (e.touches.length === 0) {
+            gameState.isMouseDown = false;
+        }
+    });
+    
+    // Add setting for vibration
+    gameState.vibrationEnabled = true;
+    
+    // Add performance optimizations for mobile
+    // Safely check if scene and scene.fog exist before modifying
+    if (scene) {
+        // Create fog if it doesn't exist
+        if (!scene.fog) {
+            scene.fog = new THREE.Fog(0x000000, 20, 80);
+        } else {
+            // Modify existing fog
+            scene.fog.near = 20; // Reduce fog distance for better performance
+            scene.fog.far = 80;
+        }
+    }
+    
+    // Note: We can't access dirLight here as it's not in scope
+    // Mobile shadow quality is handled elsewhere
+    
+    // Listen for vibration toggle event
+    document.addEventListener('toggleVibration', function(e) {
+        gameState.vibrationEnabled = e.detail.enabled;
+        console.log('Vibration ' + (gameState.vibrationEnabled ? 'enabled' : 'disabled'));
+    });
+}
+
+// Listen for the custom enableAudio event
+document.addEventListener('enableAudio', function() {
+    // Resume audio context when the user explicitly enables audio
+    resumeAudioContext();
+    
+    // Ensure sound is enabled in game state
+    gameState.soundEnabled = true;
+    
+    console.log('Audio explicitly enabled by user');
+});
+
+// Function to reduce shadow quality for mobile devices
+function reduceShadowQualityForMobile() {
+    if (!isMobileDevice()) return;
+    
+    // Reduce shadow map size for better performance
+    if (dirLight && dirLight.shadow) {
+        dirLight.shadow.mapSize.width = 1024;  // Reduced from 2048
+        dirLight.shadow.mapSize.height = 1024; // Reduced from 2048
+    }
+}

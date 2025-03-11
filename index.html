@@ -85,6 +85,10 @@
         }
         #submitScoreButton {
             background: #3a86ff;
+            margin: 0 auto;
+            flex-shrink: 0;
+            width: auto;
+            white-space: nowrap;
         }
         #viewLeaderboardButton {
             background: #2667cc;
@@ -174,6 +178,8 @@
         @media (max-width: 600px) {
             #menuScreen {
                 padding: 15px;
+                width: 95%;
+                max-height: 85vh;
             }
             #menuScreen h1 {
                 font-size: 24px;
@@ -191,6 +197,94 @@
             .menu-button {
                 padding: 8px 16px;
                 font-size: 16px;
+                margin: 8px auto;
+            }
+            
+            /* Title screen mobile adjustments */
+            #titleContent {
+                max-width: 95%;
+                padding: 20px 15px;
+                margin: 0 10px;
+                overflow-y: auto;
+                max-height: 90vh;
+            }
+            #titleScreen h1 {
+                font-size: 32px;
+                margin-bottom: 5px;
+            }
+            #titleScreen h2 {
+                font-size: 18px;
+                margin-bottom: 15px;
+            }
+            .instruction-section {
+                margin: 15px 0;
+                padding: 10px;
+            }
+            .instruction-grid {
+                grid-template-columns: 1fr;
+                gap: 5px;
+            }
+            .instruction-grid p {
+                margin: 5px 0;
+                font-size: 14px;
+            }
+            #startGameButton, #leaderboardButton {
+                padding: 12px 20px;
+                font-size: 18px;
+                margin-top: 15px;
+                width: 100%;
+                max-width: 250px;
+            }
+            .username-section {
+                padding: 10px;
+                margin: 10px auto;
+            }
+            #titlePlayerNameInput {
+                padding: 8px 10px;
+                font-size: 16px;
+            }
+            .username-hint {
+                font-size: 12px;
+            }
+            #gameFooter {
+                font-size: 12px;
+                margin-top: 10px;
+            }
+            
+            /* Game over screen mobile adjustments */
+            #gameOver {
+                width: 90%;
+                padding: 20px;
+            }
+            #gameOver h1 {
+                font-size: 28px;
+                margin-bottom: 10px;
+            }
+            .game-stats p {
+                font-size: 16px;
+                margin: 5px 0;
+            }
+            #restartButton, #submitScoreButton, #viewLeaderboardButton {
+                padding: 10px 20px;
+                font-size: 16px;
+                margin-top: 10px;
+            }
+            .submit-container {
+                flex-direction: column;
+                gap: 10px;
+            }
+            #playerNameInput {
+                width: 100%;
+                padding: 8px;
+                font-size: 16px;
+            }
+            #submitScoreButton {
+                width: 100%;
+            }
+            #ammo {
+                pointer-events: none;
+                background-color: transparent;
+                border: none;
             }
         }
         #menuScreen {
@@ -265,11 +359,14 @@
         
         #titleContent {
             max-width: 800px;
+            width: 90%;
             padding: 30px;
             background-color: rgba(0, 0, 0, 0.7);
             border-radius: 15px;
             border: 2px solid #3a86ff;
             box-shadow: 0 0 30px rgba(58, 134, 255, 0.5);
+            overflow-y: auto;
+            max-height: 90vh;
         }
         
         #titleScreen h1 {
@@ -304,6 +401,12 @@
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 10px;
+            font-size: 16px;
+            line-height: 1.4;
+        }
+        
+        .instruction-grid p {
+            margin: 5px 0;
         }
         
         #startGameButton, #leaderboardButton {
@@ -378,26 +481,6 @@
             gap: 10px;
         }
         
-        #playerNameInput {
-            background: rgba(255, 255, 255, 0.9);
-            border: 2px solid #3a86ff;
-            border-radius: 5px;
-            padding: 10px 15px;
-            font-size: 18px;
-            font-family: 'Courier New', monospace;
-            flex: 1;
-            min-width: 0;
-            text-align: center;
-            margin: 0;
-        }
-        
-        #submitScoreButton {
-            margin: 0;
-            flex-shrink: 0;
-            width: auto;
-            white-space: nowrap;
-        }
-        
         /* Style for disabled submit button */
         #submitScoreButton:disabled {
             background-color: #666;
@@ -448,9 +531,218 @@
             padding: 10px 15px;
             font-size: 18px;
             font-family: 'Courier New', monospace;
-            width: 100%;
+            flex: 1;
+            min-width: 0;
             text-align: center;
-            box-sizing: border-box;
+            margin: 0;
+        }
+        
+        /* Extra small screens */
+        @media (max-width: 375px) {
+            #titleContent {
+                padding: 15px 10px;
+            }
+            #titleScreen h1 {
+                font-size: 28px;
+            }
+            #titleScreen h2 {
+                font-size: 16px;
+                margin-bottom: 10px;
+            }
+            .instruction-section {
+                padding: 8px;
+            }
+            .instruction-grid p {
+                font-size: 13px;
+            }
+            #startGameButton, #leaderboardButton {
+                padding: 10px 15px;
+                font-size: 16px;
+            }
+            .username-section {
+                padding: 8px;
+            }
+        }
+        
+        /* Virtual joystick styles */
+        #joystick-container {
+            position: absolute;
+            bottom: 100px;
+            left: 20px;
+            width: 150px;
+            height: 150px;
+            pointer-events: auto;
+            display: none;
+            z-index: 100;
+            opacity: 0.8;
+        }
+        
+        /* Aiming joystick styles */
+        #aim-joystick-container {
+            position: absolute;
+            bottom: 100px;
+            right: 20px;
+            width: 150px;
+            height: 150px;
+            pointer-events: auto;
+            display: none;
+            z-index: 100;
+            opacity: 0.8;
+        }
+        
+        /* Joystick icon styles */
+        .joystick-icon {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 60px;
+            height: 60px;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            opacity: 0.7;
+            pointer-events: none;
+            z-index: 101;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { transform: translate(-50%, -50%) scale(1); opacity: 0.7; }
+            50% { transform: translate(-50%, -50%) scale(1.2); opacity: 0.9; }
+            100% { transform: translate(-50%, -50%) scale(1); opacity: 0.7; }
+        }
+        
+        .joystick-label {
+            position: absolute;
+            bottom: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 14px;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 3px 8px;
+            border-radius: 10px;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+        
+        #move-icon {
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><path d="M12 2L8 6h3v5H6V8l-4 4 4 4v-3h5v5H8l4 4 4-4h-3v-5h5v3l4-4-4-4v3h-5V6h3z"/></svg>');
+        }
+        
+        #aim-icon {
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="9" fill="none" stroke="white" stroke-width="2"/><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>');
+        }
+        
+        /* Make joystick visible only on mobile */
+        @media (max-width: 600px) {
+            #joystick-container, #aim-joystick-container {
+                display: block;
+            }
+            
+            #health, #ammo {
+                font-size: 28px;
+                padding: 8px;
+                background-color: rgba(0, 0, 0, 0.4);
+                border-radius: 8px;
+            }
+            
+            #bullets {
+                font-size: 22px;
+                padding: 8px;
+                background-color: rgba(0, 0, 0, 0.4);
+                border-radius: 8px;
+                bottom: 60px;
+            }
+            
+            #enemies {
+                font-size: 22px;
+                padding: 8px 12px;
+            }
+            
+            #crosshair {
+                font-size: 32px;
+            }
+            
+            #restartButton, #submitScoreButton, #viewLeaderboardButton, 
+            #startGameButton, #leaderboardButton, #enableAudioButton {
+                margin-top: 20px;
+                padding: 15px 25px;
+                min-height: 50px;
+            }
+            
+            .menu-button {
+                margin: 15px auto;
+                min-height: 50px;
+            }
+            
+            #soundToggle {
+                font-size: 36px;
+                padding: 12px 20px;
+                margin: 10px;
+            }
+        }
+        
+        /* Fullscreen button styles */
+        #fullscreenButton {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 24px;
+            cursor: pointer;
+            z-index: 100;
+            pointer-events: auto;
+            display: none;
+        }
+        
+        @media (max-width: 600px) {
+            #fullscreenButton {
+                display: block;
+            }
+        }
+        
+        /* Extra small screens - further refinements */
+        @media (max-width: 375px) {
+            #health {
+                bottom: 25px;
+                left: 15px;
+            }
+            
+            #ammo {
+                bottom: 25px;
+                right: 15px;
+            }
+            
+            #bullets {
+                bottom: 70px;
+                right: 15px;
+            }
+            
+            #joystick-container {
+                bottom: 110px;
+                left: 15px;
+                width: 130px;
+                height: 130px;
+            }
+            
+            .menu-button, #restartButton, #submitScoreButton, #viewLeaderboardButton {
+                padding: 12px 20px;
+                font-size: 18px;
+            }
+            
+            #fullscreenButton {
+                top: 15px;
+                left: 15px;
+                padding: 6px 10px;
+                font-size: 20px;
+            }
         }
     </style>
     <!-- Vercel Web Analytics -->
@@ -458,6 +750,8 @@
         window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
     </script>
     <script defer src="/_vercel/insights/script.js"></script>
+    <!-- NippleJS for virtual joystick -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
 </head>
 <body>
     <div id="titleScreen">
@@ -467,7 +761,7 @@
             
             <div class="instruction-section">
                 <h3>HOW TO PLAY</h3>
-                <div class="instruction-grid">
+                <div id="desktopControls" class="instruction-grid">
                     <p>🎮 <strong>WASD</strong> - Move around</p>
                     <p>🖱️ <strong>Mouse</strong> - Aim</p>
                     <p>🔫 <strong>Left Click</strong> - Shoot</p>
@@ -476,18 +770,38 @@
                     <p>🎒 <strong>E</strong> - Pick up items</p>
                     <p>⏸️ <strong>ESC</strong> - Pause game</p>
                 </div>
+                <div id="mobileInstructions" style="display: none; margin-top: 15px;">
+                    <div style="background-color: rgba(58, 134, 255, 0.2); padding: 10px; border-radius: 5px;">
+                        <p style="margin: 5px 0;">• Use the left joystick to move</p>
+                        <p style="margin: 5px 0;">• Use the right joystick to aim</p>
+                        <p style="margin: 5px 0;">• Tap the right joystick to shoot</p>
+                        <p style="margin: 5px 0;">• Hold the right joystick to keep firing</p>
+                        <p style="margin: 5px 0;">• Auto-reload when low on ammo</p>
+                        <p style="margin: 5px 0;">• Tap popup to pick up items</p>
+                        <p style="margin: 5px 0;">• Swipe up to jump</p>
+                    </div>
+                </div>
             </div>
+            
+            <script>
+                // Show appropriate controls based on device type
+                if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+                    // On mobile devices
+                    document.getElementById('desktopControls').style.display = 'none';
+                    document.getElementById('mobileInstructions').style.display = 'block';
+                }
+            </script>
             
             <div class="username-section">
                 <h3>YOUR PLAYER NAME</h3>
                 <div class="submit-container">
                     <input type="text" id="titlePlayerNameInput" placeholder="Enter your name">
                 </div>
-                <p class="username-hint">This name will be used for the leaderboard</p>
             </div>
             
             <button id="startGameButton">START GAME</button>
             <button id="leaderboardButton">VIEW LEADERBOARD</button>
+            <button id="enableAudioButton" style="background: #4CAF50; margin-top: 10px; display: none; margin-left: auto; margin-right: auto; max-width: 300px; width: 100%;">ENABLE AUDIO</button>
             <div id="gameFooter">
                 Made by <a href="https://x.com/0xyardev" target="_blank">Yard</a>
             </div>
@@ -495,11 +809,18 @@
     </div>
 
     <div id="ui">
+        <button id="fullscreenButton">⛶</button>
         <div id="crosshair">+</div>
         <div id="health">❤️ 100</div>
         <div id="ammo">🔫 10/10</div>
         <div id="bullets">🔹 Bullets: 30</div>
-        <div id="enemies">👾 Enemies: 0</div>
+        <div id="enemies">👾 0</div>
+        <div id="joystick-container">
+            <div id="move-icon" class="joystick-icon"></div>
+        </div>
+        <div id="aim-joystick-container">
+            <div id="aim-icon" class="joystick-icon"></div>
+        </div>
         <div id="gameOver">
             <h1>GAME OVER!</h1>
             <div class="game-stats">
@@ -507,6 +828,7 @@
                 <p>Wave: <span id="finalLevel">1</span></p>
             </div>
             <div class="submit-container">
+                <input type="text" id="playerNameInput" placeholder="Enter your name" style="display: none;">
                 <button id="submitScoreButton">SUBMIT SCORE</button>
             </div>
             <span id="scoreSubmitStatus"></span>
@@ -534,17 +856,29 @@
         <div class="menu-section">
             <div class="controls-info">
                 <p><strong>Controls:</strong></p>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; text-align: left;">
+                <div id="desktopMenuControls" style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; text-align: left;">
                     <p>🎮 <strong>WASD</strong> - Move</p>
                     <p>🖱️ <strong>Click</strong> - Shoot</p>
                     <p>🔄 <strong>R</strong> - Reload</p>
                     <p>🔍 <strong>E</strong> - Interact</p>
+                </div>
+                <div id="mobileMenuControls" style="display: none; text-align: left;">
+                    <p>• Use the left joystick to move</p>
+                    <p>• Use the right joystick to aim</p>
+                    <p>• Tap/hold the right joystick to shoot</p>
+                    <p>• Auto-reload when low on ammo</p>
+                    <p>• Tap the popup to pick up items</p>
                 </div>
             </div>
         </div>
         
         <div class="menu-section">
             <p><strong>Sound:</strong> <span id="soundToggle" style="margin-left: 10px;">🔊</span></p>
+        </div>
+        
+        <!-- Vibration toggle for mobile devices only -->
+        <div id="vibrationToggleSection" class="menu-section" style="display: none;">
+            <p><strong>Vibration:</strong> <span id="vibrationToggle" style="margin-left: 10px;">📳</span></p>
         </div>
         
         <div class="menu-section" style="display: flex; flex-direction: column; align-items: center;">
@@ -564,5 +898,151 @@
         }
     </script>
     <script type="module" src="game.js"></script>
+    <script>
+        // Show appropriate menu controls based on device type
+        document.addEventListener('DOMContentLoaded', function() {
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            
+            if (isMobile) {
+                document.getElementById('desktopMenuControls').style.display = 'none';
+                document.getElementById('mobileMenuControls').style.display = 'block';
+                
+                // Show vibration toggle for mobile devices
+                const vibrationToggleSection = document.getElementById('vibrationToggleSection');
+                if (vibrationToggleSection) {
+                    vibrationToggleSection.style.display = 'block';
+                }
+                
+                // Setup vibration toggle functionality
+                const vibrationToggle = document.getElementById('vibrationToggle');
+                if (vibrationToggle) {
+                    // Initialize based on current setting (default is enabled)
+                    let vibrationEnabled = true;
+                    
+                    // Update toggle display
+                    function updateVibrationToggle() {
+                        vibrationToggle.textContent = vibrationEnabled ? '📳' : '📴';
+                        vibrationToggle.style.backgroundColor = vibrationEnabled ? '#4CAF50' : '#f44336';
+                        
+                        // Dispatch custom event to update game state
+                        const event = new CustomEvent('toggleVibration', { 
+                            detail: { enabled: vibrationEnabled } 
+                        });
+                        document.dispatchEvent(event);
+                        
+                        // Provide haptic feedback when enabling
+                        if (vibrationEnabled && navigator.vibrate) {
+                            navigator.vibrate(50);
+                        }
+                    }
+                    
+                    // Add click handler
+                    vibrationToggle.addEventListener('click', function() {
+                        vibrationEnabled = !vibrationEnabled;
+                        updateVibrationToggle();
+                    });
+                    
+                    // Initialize toggle display
+                    updateVibrationToggle();
+                }
+                
+                // Also update the ESC hint for mobile
+                const escHint = document.querySelector('#menuScreen > p:last-of-type');
+                if (escHint) {
+                    escHint.textContent = 'Tap outside menu to close';
+                }
+                
+                // Show the enable audio button for mobile users
+                const enableAudioButton = document.getElementById('enableAudioButton');
+                if (enableAudioButton) {
+                    enableAudioButton.style.display = 'block';
+                }
+                
+                // Attempt to auto-enable audio on first user interaction for mobile
+                document.addEventListener('click', function autoEnableAudio() {
+                    // Create and dispatch the enableAudio event
+                    const event = new CustomEvent('enableAudio');
+                    document.dispatchEvent(event);
+                    
+                    // Update button if it was auto-enabled
+                    if (enableAudioButton) {
+                        enableAudioButton.textContent = 'AUDIO ENABLED ✓';
+                        enableAudioButton.style.background = '#2E7D32';
+                    }
+                    
+                    // Remove this listener after first click
+                    document.removeEventListener('click', autoEnableAudio);
+                }, { once: true });
+                
+                // Setup fullscreen functionality for mobile
+                const fullscreenButton = document.getElementById('fullscreenButton');
+                if (fullscreenButton) {
+                    fullscreenButton.addEventListener('click', function() {
+                        if (!document.fullscreenElement) {
+                            // Enter fullscreen
+                            if (document.documentElement.requestFullscreen) {
+                                document.documentElement.requestFullscreen();
+                            } else if (document.documentElement.webkitRequestFullscreen) {
+                                document.documentElement.webkitRequestFullscreen();
+                            } else if (document.documentElement.msRequestFullscreen) {
+                                document.documentElement.msRequestFullscreen();
+                            }
+                            fullscreenButton.textContent = '⤢';
+                        } else {
+                            // Exit fullscreen
+                            if (document.exitFullscreen) {
+                                document.exitFullscreen();
+                            } else if (document.webkitExitFullscreen) {
+                                document.webkitExitFullscreen();
+                            } else if (document.msExitFullscreen) {
+                                document.msExitFullscreen();
+                            }
+                            fullscreenButton.textContent = '⛶';
+                        }
+                    });
+                    
+                    // Update button icon when fullscreen state changes
+                    document.addEventListener('fullscreenchange', function() {
+                        fullscreenButton.textContent = document.fullscreenElement ? '⤢' : '⛶';
+                    });
+                }
+                
+                // Add meta viewport tag to prevent pinch zoom on iOS
+                const metaViewport = document.querySelector('meta[name="viewport"]');
+                if (metaViewport) {
+                    metaViewport.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+                }
+                
+                // Add touch-action CSS to prevent browser handling of touch gestures
+                const style = document.createElement('style');
+                style.textContent = `
+                    body, canvas {
+                        touch-action: none;
+                        -webkit-touch-callout: none;
+                        -webkit-user-select: none;
+                        -khtml-user-select: none;
+                        -moz-user-select: none;
+                        -ms-user-select: none;
+                        user-select: none;
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+            
+            // Add event listener for the enable audio button
+            const enableAudioButton = document.getElementById('enableAudioButton');
+            if (enableAudioButton) {
+                enableAudioButton.addEventListener('click', function() {
+                    // This will be handled by the game.js file
+                    const event = new CustomEvent('enableAudio');
+                    document.dispatchEvent(event);
+                    
+                    // Visual feedback
+                    this.textContent = 'AUDIO ENABLED ✓';
+                    this.style.background = '#2E7D32';
+                });
+            }
+        });
+    </script>
 </body>
 </html> 
