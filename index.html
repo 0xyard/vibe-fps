@@ -655,6 +655,7 @@
             
             <button id="startGameButton">START GAME</button>
             <button id="leaderboardButton">VIEW LEADERBOARD</button>
+            <button id="enableAudioButton" style="background: #4CAF50; margin-top: 10px; display: none; margin-left: auto; margin-right: auto; max-width: 300px; width: 100%;">ENABLE AUDIO</button>
             <div id="gameFooter">
                 Made by <a href="https://x.com/0xyardev" target="_blank">Yard</a>
             </div>
@@ -742,7 +743,9 @@
     <script>
         // Show appropriate menu controls based on device type
         document.addEventListener('DOMContentLoaded', function() {
-            if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            
+            if (isMobile) {
                 document.getElementById('desktopMenuControls').style.display = 'none';
                 document.getElementById('mobileMenuControls').style.display = 'block';
                 
@@ -751,6 +754,42 @@
                 if (escHint) {
                     escHint.textContent = 'Tap outside menu to close';
                 }
+                
+                // Show the enable audio button for mobile users
+                const enableAudioButton = document.getElementById('enableAudioButton');
+                if (enableAudioButton) {
+                    enableAudioButton.style.display = 'block';
+                }
+                
+                // Attempt to auto-enable audio on first user interaction for mobile
+                document.addEventListener('click', function autoEnableAudio() {
+                    // Create and dispatch the enableAudio event
+                    const event = new CustomEvent('enableAudio');
+                    document.dispatchEvent(event);
+                    
+                    // Update button if it was auto-enabled
+                    if (enableAudioButton) {
+                        enableAudioButton.textContent = 'AUDIO ENABLED ✓';
+                        enableAudioButton.style.background = '#2E7D32';
+                    }
+                    
+                    // Remove this listener after first click
+                    document.removeEventListener('click', autoEnableAudio);
+                }, { once: true });
+            }
+            
+            // Add event listener for the enable audio button
+            const enableAudioButton = document.getElementById('enableAudioButton');
+            if (enableAudioButton) {
+                enableAudioButton.addEventListener('click', function() {
+                    // This will be handled by the game.js file
+                    const event = new CustomEvent('enableAudio');
+                    document.dispatchEvent(event);
+                    
+                    // Visual feedback
+                    this.textContent = 'AUDIO ENABLED ✓';
+                    this.style.background = '#2E7D32';
+                });
             }
         });
     </script>

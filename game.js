@@ -170,6 +170,9 @@ scene.add(hemiLight);
 const audioListener = new THREE.AudioListener();
 camera.add(audioListener);
 
+// Get the audio context from the listener for later use
+const audioContext = audioListener.context;
+
 // Sound effects
 const soundEffects = {
     shoot: new THREE.Audio(audioListener),
@@ -444,6 +447,13 @@ if (isMobileDevice()) {
     // Handle touch start (equivalent to mousedown)
     renderer.domElement.addEventListener('touchstart', function(e) {
         e.preventDefault();
+        
+        // Resume audio context on user interaction
+        if (audioContext && audioContext.state === "suspended") {
+            audioContext.resume().then(() => {
+                console.log('AudioContext resumed successfully');
+            });
+        }
         
         // Store the initial touch position
         if (e.touches.length > 0) {
@@ -1921,6 +1931,17 @@ function showRoundNotification(round) {
     }, 3000);
 }
 
+// Function to check and resume audio context
+function resumeAudioContext() {
+    if (audioContext && audioContext.state === "suspended") {
+        audioContext.resume().then(() => {
+            console.log('AudioContext resumed successfully');
+        }).catch(error => {
+            console.error('Error resuming AudioContext:', error);
+        });
+    }
+}
+
 // Initialize the game
 function init() {
     if (!checkWebGLSupport()) {
@@ -1930,6 +1951,9 @@ function init() {
     
     // Check if this is the first visit
     checkFirstVisit();
+    
+    // Try to resume audio context
+    resumeAudioContext();
     
     // Initialize UI elements
     roundNotification = createRoundNotification();
@@ -2071,15 +2095,12 @@ function hideTitleScreen() {
 
 // Start the game from title screen
 function startGame() {
-    // Save the player name from the title screen
-    const playerNameInput = document.getElementById('titlePlayerNameInput');
-    if (playerNameInput && playerNameInput.value.trim()) {
-        import('./leaderboard.js').then(module => {
-            module.savePlayerName(playerNameInput.value.trim());
-        });
-    }
-    
+    // Hide title screen
     hideTitleScreen();
+    
+    // Try to resume audio context on game start
+    resumeAudioContext();
+    
     gameState.gameStarted = true;
     
     // Lock controls to start the game
@@ -6238,6 +6259,13 @@ function initJoystick() {
     // Handle joystick events
     joystick.on('start', function() {
         isJoystickActive = true;
+        
+        // Resume audio context on joystick interaction
+        if (audioContext && audioContext.state === "suspended") {
+            audioContext.resume().then(() => {
+                console.log('AudioContext resumed by joystick interaction');
+            });
+        }
     });
     
     joystick.on('end', function() {
@@ -6280,3 +6308,14 @@ function safeExitPointerLock() {
         controls.dispatchEvent({ type: 'unlock' });
     }
 }
+
+// Listen for the custom enableAudio event
+document.addEventListener('enableAudio', function() {
+    // Resume audio context when the user explicitly enables audio
+    resumeAudioContext();
+    
+    // Ensure sound is enabled in game state
+    gameState.soundEnabled = true;
+    
+    console.log('Audio explicitly enabled by user');
+});
