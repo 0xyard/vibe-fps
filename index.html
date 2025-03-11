@@ -174,6 +174,8 @@
         @media (max-width: 600px) {
             #menuScreen {
                 padding: 15px;
+                width: 95%;
+                max-height: 85vh;
             }
             #menuScreen h1 {
                 font-size: 24px;
@@ -191,6 +193,89 @@
             .menu-button {
                 padding: 8px 16px;
                 font-size: 16px;
+                margin: 8px auto;
+            }
+            
+            /* Title screen mobile adjustments */
+            #titleContent {
+                max-width: 95%;
+                padding: 20px 15px;
+                margin: 0 10px;
+                overflow-y: auto;
+                max-height: 90vh;
+            }
+            #titleScreen h1 {
+                font-size: 32px;
+                margin-bottom: 5px;
+            }
+            #titleScreen h2 {
+                font-size: 18px;
+                margin-bottom: 15px;
+            }
+            .instruction-section {
+                margin: 15px 0;
+                padding: 10px;
+            }
+            .instruction-grid {
+                grid-template-columns: 1fr;
+                gap: 5px;
+            }
+            .instruction-grid p {
+                margin: 5px 0;
+                font-size: 14px;
+            }
+            #startGameButton, #leaderboardButton {
+                padding: 12px 20px;
+                font-size: 18px;
+                margin-top: 15px;
+                width: 100%;
+                max-width: 250px;
+            }
+            .username-section {
+                padding: 10px;
+                margin: 10px auto;
+            }
+            #titlePlayerNameInput {
+                padding: 8px 10px;
+                font-size: 16px;
+            }
+            .username-hint {
+                font-size: 12px;
+            }
+            #gameFooter {
+                font-size: 12px;
+                margin-top: 10px;
+            }
+            
+            /* Game over screen mobile adjustments */
+            #gameOver {
+                width: 90%;
+                padding: 20px;
+            }
+            #gameOver h1 {
+                font-size: 28px;
+                margin-bottom: 10px;
+            }
+            .game-stats p {
+                font-size: 16px;
+                margin: 5px 0;
+            }
+            #restartButton, #submitScoreButton, #viewLeaderboardButton {
+                padding: 10px 20px;
+                font-size: 16px;
+                margin-top: 10px;
+            }
+            .submit-container {
+                flex-direction: column;
+                gap: 10px;
+            }
+            #playerNameInput {
+                width: 100%;
+                padding: 8px;
+                font-size: 16px;
+            }
+            #submitScoreButton {
+                width: 100%;
             }
         }
         #menuScreen {
@@ -265,11 +350,14 @@
         
         #titleContent {
             max-width: 800px;
+            width: 90%;
             padding: 30px;
             background-color: rgba(0, 0, 0, 0.7);
             border-radius: 15px;
             border: 2px solid #3a86ff;
             box-shadow: 0 0 30px rgba(58, 134, 255, 0.5);
+            overflow-y: auto;
+            max-height: 90vh;
         }
         
         #titleScreen h1 {
@@ -304,6 +392,12 @@
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 10px;
+            font-size: 16px;
+            line-height: 1.4;
+        }
+        
+        .instruction-grid p {
+            margin: 5px 0;
         }
         
         #startGameButton, #leaderboardButton {
@@ -452,6 +546,33 @@
             text-align: center;
             box-sizing: border-box;
         }
+        
+        /* Extra small screens */
+        @media (max-width: 375px) {
+            #titleContent {
+                padding: 15px 10px;
+            }
+            #titleScreen h1 {
+                font-size: 28px;
+            }
+            #titleScreen h2 {
+                font-size: 16px;
+                margin-bottom: 10px;
+            }
+            .instruction-section {
+                padding: 8px;
+            }
+            .instruction-grid p {
+                font-size: 13px;
+            }
+            #startGameButton, #leaderboardButton {
+                padding: 10px 15px;
+                font-size: 16px;
+            }
+            .username-section {
+                padding: 8px;
+            }
+        }
     </style>
     <!-- Vercel Web Analytics -->
     <script>
@@ -483,7 +604,6 @@
                 <div class="submit-container">
                     <input type="text" id="titlePlayerNameInput" placeholder="Enter your name">
                 </div>
-                <p class="username-hint">This name will be used for the leaderboard</p>
             </div>
             
             <button id="startGameButton">START GAME</button>

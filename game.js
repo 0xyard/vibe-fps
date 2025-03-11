@@ -307,7 +307,7 @@ controls.addEventListener('lock', () => {
     // This prevents the game from restarting when clicking on the game over screen buttons
     if (gameState.gameOver && !gameState.clickedGameOverButton) {
         // If game is over, immediately exit pointer lock to prevent accidental restart
-        document.exitPointerLock();
+        safeExitPointerLock();
         return;
     }
     
@@ -1930,6 +1930,20 @@ function hideTitleScreen() {
     
     // Restore controls
     controls.lock = PointerLockControls.prototype.lock;
+    
+    // Override lock method to check for mobile devices
+    const originalLock = controls.lock;
+    controls.lock = function() {
+        if (isMobileDevice()) {
+            // For mobile devices, just set isLocked to true without requesting pointer lock
+            this.isLocked = true;
+            this.dispatchEvent({ type: 'lock' });
+            return true;
+        } else {
+            // For desktop, use the original lock method
+            return originalLock.apply(this, arguments);
+        }
+    };
 }
 
 // Start the game from title screen
@@ -2740,7 +2754,7 @@ function checkGameOver() {
         
         // Completely disable pointer lock controls
         controls.enabled = false;
-        document.exitPointerLock();
+        safeExitPointerLock();
         
         // Add a click event listener to the entire document to prevent pointer lock
         const preventLock = (e) => {
@@ -2751,7 +2765,7 @@ function checkGameOver() {
                 e.target.id !== 'viewLeaderboardButton' &&
                 e.target.id !== 'playerNameInput') {
                 e.stopPropagation();
-                document.exitPointerLock();
+                safeExitPointerLock();
             }
         };
         
@@ -5971,7 +5985,7 @@ document.body.addEventListener('click', (e) => {
             e.target.id !== 'submitScoreButton' && 
             e.target.id !== 'viewLeaderboardButton') {
             e.stopPropagation();
-            document.exitPointerLock();
+            safeExitPointerLock();
         }
     }
 });
@@ -6006,3 +6020,21 @@ function checkSoundsLoaded() {
 
 // Call this function after a delay to check if sounds are loaded
 setTimeout(checkSoundsLoaded, 5000); // Check after 5 seconds
+
+// Add mobile device detection utility
+function isMobileDevice() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+// Custom function to handle exiting pointer lock for both mobile and desktop
+function safeExitPointerLock() {
+    if (!isMobileDevice() && document.pointerLockElement) {
+        document.exitPointerLock();
+    }
+    
+    // For mobile devices, we need to manually update the controls state
+    if (isMobileDevice() && controls && controls.isLocked) {
+        controls.isLocked = false;
+        controls.dispatchEvent({ type: 'unlock' });
+    }
+}
