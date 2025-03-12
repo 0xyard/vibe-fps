@@ -3604,8 +3604,8 @@ function animate() {
             if (movementAmount < 0.01) {
                 enemy.stuckTime += delta;
                 
-                // If enemy has been stuck for too long (5 seconds), teleport it to a new position
-                if (enemy.stuckTime > 5) {
+                // If enemy has been stuck for too long (3 seconds), teleport it to a new position
+                if (enemy.stuckTime > 3) {
                     debugLog('Enemy stuck for too long, teleporting to new position');
                     
                     // Find a new position around the player
@@ -3617,24 +3617,28 @@ function animate() {
                     let newPosition = new THREE.Vector3();
                     let attempts = 0;
                     
+                    // Try to find a position with line of sight to the player
                     while (!validPosition && attempts < 20) {
                         attempts++;
                         
-                        // Random angle and distance from player (between 10-15 units away)
+                        // Random angle but biased towards player's direction
                         const randomAngle = Math.random() * Math.PI * 2;
-                        const randomDistance = 10 + Math.random() * 5;
+                        // Distance between 8 and 15 units from player
+                        const distance = 8 + Math.random() * 7;
                         
-                        // Calculate new position
-                        newPosition.x = playerPosition.x + Math.sin(randomAngle) * randomDistance;
-                        newPosition.y = enemy.mesh.position.y; // Keep same height
-                        newPosition.z = playerPosition.z + Math.cos(randomAngle) * randomDistance;
+                        newPosition.x = playerPosition.x + Math.sin(randomAngle) * distance;
+                        newPosition.z = playerPosition.z + Math.cos(randomAngle) * distance;
+                        newPosition.y = enemy.mesh.position.y; // Keep the same height
                         
                         // Check if position is inside any building
                         let insideAnyBuilding = false;
                         
+                        // Create a proper point for collision detection
+                        const checkPoint = new THREE.Vector3(newPosition.x, newPosition.y, newPosition.z);
+                        
                         if (gameState.allBuildingBounds) {
                             for (const bounds of gameState.allBuildingBounds) {
-                                if (bounds.containsPoint(newPosition)) {
+                                if (bounds.containsPoint(checkPoint)) {
                                     // Position is inside a building, try again
                                     insideAnyBuilding = true;
                                     break;
@@ -3642,14 +3646,31 @@ function animate() {
                             }
                         }
                         
+                        // Check if there's line of sight to the player from this position
+                        let hasLineOfSight = false;
                         if (!insideAnyBuilding) {
-                            // Position is valid
-                            validPosition = true;
+                            const dirToPlayer = new THREE.Vector3().subVectors(playerPosition, newPosition).normalize();
+                            const distToPlayer = newPosition.distanceTo(playerPosition);
+                            
+                            const raycaster = new THREE.Raycaster(
+                                newPosition,
+                                dirToPlayer,
+                                0,
+                                distToPlayer
+                            );
+                            
+                            const intersections = raycaster.intersectObjects(collisionObjects);
+                            hasLineOfSight = intersections.length === 0;
+                            
+                            // If we have line of sight, this is a valid position
+                            if (hasLineOfSight) {
+                                validPosition = true;
+                            }
                         }
                     }
                     
                     if (!validPosition) {
-                        debugLog('Could not find valid teleport position, using fallback');
+                        debugLog('Could not find valid teleport position with line of sight, using fallback');
                         // Fallback: just move the enemy closer to the player but not too close
                         newPosition.copy(playerPosition);
                         const directionFromPlayer = new THREE.Vector3().subVectors(enemy.mesh.position, playerPosition).normalize();
@@ -3698,6 +3719,7 @@ function animate() {
             // Early obstacle detection - check if we're getting too close to an obstacle
             let approachingObstacle = false;
             let obstacleDirection = null;
+            let minObstacleDistance = Infinity;
             
             // Check in multiple directions around the enemy for nearby obstacles
             for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 8) {
@@ -3712,7 +3734,7 @@ function animate() {
                     enemy.mesh.position.clone(),
                     checkDirection,
                     0,
-                    1.5 // Check 1.5 units ahead in all directions
+                    2.5 // Check 2.5 units ahead in all directions (increased from 1.5)
                 );
                 
                 // Check for intersections with obstacles
@@ -3722,21 +3744,22 @@ function animate() {
                     // Found a nearby obstacle
                     approachingObstacle = true;
                     
-                    // Store the direction to the obstacle
-                    obstacleDirection = checkDirection;
-                    
-                    // If we're very close to an obstacle, increase stuck time to trigger pathfinding
-                    if (proximityIntersections[0].distance < 0.8) {
-                        enemy.stuckTime += delta * 0.5; // Increase stuck time but not as much as when fully stuck
+                    // Store the direction to the obstacle and its distance
+                    if (proximityIntersections[0].distance < minObstacleDistance) {
+                        minObstacleDistance = proximityIntersections[0].distance;
+                        obstacleDirection = checkDirection;
                     }
                     
-                    break;
+                    // If we're very close to an obstacle, increase stuck time to trigger pathfinding
+                    if (proximityIntersections[0].distance < 1.0) {
+                        enemy.stuckTime += delta * 0.8; // Increase stuck time faster when very close to obstacles
+                    }
                 }
             }
             
             // Determine if we need to change path
             const needsNewPath = (pathBlocked || approachingObstacle || enemy.stuckTime > 0.5) && 
-                                (time - enemy.lastPathChange > 1000);
+                                (time - enemy.lastPathChange > 800); // Reduced from 1000ms to 800ms for more responsive pathfinding
             
             if (needsNewPath) {
                 // Try to find a better path around obstacles
@@ -3755,7 +3778,7 @@ function animate() {
                         enemy.mesh.position.clone(),
                         testDirection,
                         0,
-                        3 // Check 3 units ahead (increased from 2)
+                        4 // Check 4 units ahead (increased from 3)
                     );
                     
                     // Check if this direction is clear
@@ -3769,7 +3792,25 @@ function animate() {
                         // If we're approaching an obstacle, reduce the score of directions toward the obstacle
                         if (approachingObstacle && obstacleDirection) {
                             const obstacleAvoidance = 1 - Math.max(0, testDirection.dot(obstacleDirection));
-                            score += obstacleAvoidance * 0.5; // Weight obstacle avoidance
+                            score += obstacleAvoidance * 0.8; // Increased weight for obstacle avoidance from 0.5 to 0.8
+                        }
+                        
+                        // Bonus for directions that might lead to line of sight with player
+                        const potentialPosition = new THREE.Vector3().copy(enemy.mesh.position).add(
+                            testDirection.clone().multiplyScalar(3)
+                        );
+                        const dirToPlayerFromPotential = new THREE.Vector3().subVectors(camera.position, potentialPosition).normalize();
+                        const losRaycaster = new THREE.Raycaster(
+                            potentialPosition,
+                            dirToPlayerFromPotential,
+                            0,
+                            potentialPosition.distanceTo(camera.position)
+                        );
+                        const losIntersections = losRaycaster.intersectObjects(collisionObjects);
+                        
+                        if (losIntersections.length === 0) {
+                            // This direction might lead to line of sight with player
+                            score += 0.5; // Bonus for potential line of sight
                         }
                         
                         possibleDirections.push({
@@ -3789,7 +3830,8 @@ function animate() {
                     
                     // Make the offset stronger if we're approaching an obstacle
                     if (approachingObstacle) {
-                        enemy.pathfindingOffset.multiplyScalar(1.5);
+                        const obstacleProximityFactor = 1.5 + (1.0 - Math.min(minObstacleDistance, 1.0));
+                        enemy.pathfindingOffset.multiplyScalar(obstacleProximityFactor);
                     }
                     
                     enemy.lastPathChange = time;
@@ -3805,15 +3847,15 @@ function animate() {
                     
                     enemy.pathfindingOffset = randomDirection.clone();
                     enemy.pathfindingOffset.sub(directionToPlayer);
-                    enemy.pathfindingOffset.multiplyScalar(2); // Stronger offset for desperate situations
+                    enemy.pathfindingOffset.multiplyScalar(2.5); // Stronger offset for desperate situations (increased from 2.0)
                     enemy.lastPathChange = time;
                     debugLog('Enemy trying random direction - all paths blocked');
                 }
             }
             
             // Gradually reduce pathfinding offset over time if we're not stuck
-            if (enemy.stuckTime < 0.1 && time - enemy.lastPathChange > 2000) {
-                enemy.pathfindingOffset.multiplyScalar(0.95);
+            if (enemy.stuckTime < 0.1 && time - enemy.lastPathChange > 1500) {
+                enemy.pathfindingOffset.multiplyScalar(0.92); // Faster reduction (from 0.95)
             }
             
             // Calculate final movement direction with pathfinding offset
