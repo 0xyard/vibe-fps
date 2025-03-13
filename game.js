@@ -1471,27 +1471,16 @@ function interactWithPickups() {
     
     // Helper function to handle weapon pickup
     function handleWeaponPickup(pickupArray, pickupType, ammoAmount, pickupName) {
+        // Skip if this is the player's current weapon type
+        if (gameState.currentGunType === pickupType) return false;
+        
         for (let i = pickupArray.length - 1; i >= 0; i--) {
             const pickup = pickupArray[i];
             const distance = playerPosition.distanceTo(pickup.mesh.position);
             
             if (distance < 2) { // Interaction range
-                // Drop current gun and create a pickup for it
-                const dropPosition = playerPosition.clone();
-                dropPosition.y = 0.5; // Slightly above ground
-                
-                // Create pickup for current weapon
-                if (gameState.currentGunType === 'pistol') {
-                    pistolPickups.push(createPistolPickup(dropPosition));
-                } else if (gameState.currentGunType === 'machineGun') {
-                    machineGunPickups.push(createMachineGunPickup(dropPosition));
-                } else if (gameState.currentGunType === 'sniperRifle') {
-                    sniperRiflePickups.push(createSniperRiflePickup(dropPosition));
-                } else if (gameState.currentGunType === 'shotgun') {
-                    shotgunPickups.push(createShotgunPickup(dropPosition));
-                } else if (gameState.currentGunType === 'rocketLauncher') {
-                    rocketLauncherPickups.push(createRocketLauncherPickup(dropPosition));
-                }
+                // Remove current weapon from scene (don't create a pickup for it)
+                // Just update the weapon visibility
                 
                 // Pick up new weapon
                 gameState.currentGunType = pickupType;
@@ -4269,57 +4258,74 @@ function checkForNearbyPickups() {
     let nearestDistance = Infinity;
     
     // Check for machine gun pickups
-    for (const pickup of machineGunPickups) {
-        const distance = playerPosition.distanceTo(pickup.mesh.position);
-        
-        if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
-            nearestDistance = distance;
-            nearestPickupType = 'machineGun';
-            foundNearbyPickup = true;
+    if (gameState.currentGunType !== 'machineGun') {
+        for (const pickup of machineGunPickups) {
+            const distance = playerPosition.distanceTo(pickup.mesh.position);
+            
+            if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
+                nearestDistance = distance;
+                nearestPickupType = 'machineGun';
+                foundNearbyPickup = true;
+            }
         }
     }
     
     // Check for pistol pickups
-    for (const pickup of pistolPickups) {
-        const distance = playerPosition.distanceTo(pickup.mesh.position);
-        
-        if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
-            nearestDistance = distance;
-            nearestPickupType = 'pistol';
-            foundNearbyPickup = true;
+    if (gameState.currentGunType !== 'pistol') {
+        for (const pickup of pistolPickups) {
+            const distance = playerPosition.distanceTo(pickup.mesh.position);
+            
+            if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
+                nearestDistance = distance;
+                nearestPickupType = 'pistol';
+                foundNearbyPickup = true;
+            }
         }
     }
     
     // Check for sniper rifle pickups
-    for (const pickup of sniperRiflePickups) {
-        const distance = playerPosition.distanceTo(pickup.mesh.position);
-        
-        if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
-            nearestDistance = distance;
-            nearestPickupType = 'sniperRifle';
-            foundNearbyPickup = true;
+    if (gameState.currentGunType !== 'sniperRifle') {
+        for (const pickup of sniperRiflePickups) {
+            const distance = playerPosition.distanceTo(pickup.mesh.position);
+            
+            if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
+                nearestDistance = distance;
+                nearestPickupType = 'sniperRifle';
+                foundNearbyPickup = true;
+            }
         }
     }
     
     // Check for shotgun pickups
-    for (const pickup of shotgunPickups) {
-        const distance = playerPosition.distanceTo(pickup.mesh.position);
-        
-        if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
-            nearestDistance = distance;
-            nearestPickupType = 'shotgun';
-            foundNearbyPickup = true;
+    if (gameState.currentGunType !== 'shotgun') {
+        for (const pickup of shotgunPickups) {
+            const distance = playerPosition.distanceTo(pickup.mesh.position);
+            
+            if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
+                nearestDistance = distance;
+                nearestPickupType = 'shotgun';
+                foundNearbyPickup = true;
+            }
         }
     }
     
-    // Show or hide hint based on nearby pickups
-    if (foundNearbyPickup) {
-        // Only show hint if pickup type changed or it's been more than 5 seconds
-        if (nearestPickupType !== gameState.nearbyPickup || 
-            performance.now() - gameState.lastPickupHintTime > 5000) {
-            showPickupHint(nearestPickupType);
-            gameState.nearbyPickup = nearestPickupType;
+    // Check for rocket launcher pickups
+    if (gameState.currentGunType !== 'rocketLauncher') {
+        for (const pickup of rocketLauncherPickups) {
+            const distance = playerPosition.distanceTo(pickup.mesh.position);
+            
+            if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
+                nearestDistance = distance;
+                nearestPickupType = 'rocketLauncher';
+                foundNearbyPickup = true;
+            }
         }
+    }
+    
+    // Show or hide pickup hint
+    if (foundNearbyPickup && nearestPickupType) {
+        showPickupHint(nearestPickupType);
+        gameState.nearbyPickup = nearestPickupType;
     } else {
         // Hide hint if no pickups are nearby
         hidePickupHint();
@@ -5255,26 +5261,61 @@ function handleEnemyDefeat(enemy, position) {
     
     // Random drop chance
     const dropRoll = Math.random();
+    
+    // Determine which weapons can be dropped (exclude current weapon)
+    const availableWeapons = [];
+    
+    if (gameState.currentGunType !== 'machineGun') {
+        availableWeapons.push('machineGun');
+    }
+    
+    if (gameState.currentGunType !== 'sniperRifle') {
+        availableWeapons.push('sniperRifle');
+    }
+    
+    if (gameState.currentGunType !== 'shotgun') {
+        availableWeapons.push('shotgun');
+    }
+    
+    if (gameState.currentGunType !== 'rocketLauncher') {
+        availableWeapons.push('rocketLauncher');
+    }
+    
+    if (gameState.currentGunType !== 'pistol') {
+        availableWeapons.push('pistol');
+    }
+    
     if (dropRoll < 0.05) {
         // 5% chance to drop health
         healthPickups.push(createHealthPickup(position.clone()));
         debugLog('Enemy dropped health');
-    } else if (dropRoll < 0.1) {
-        // 5% chance to drop machine gun
-        machineGunPickups.push(createMachineGunPickup(position.clone()));
-        debugLog('Enemy dropped machine gun');
-    } else if (dropRoll < 0.15) {
-        // 5% chance to drop sniper rifle (rare)
-        sniperRiflePickups.push(createSniperRiflePickup(position.clone()));
-        debugLog('Enemy dropped sniper rifle');
-    } else if (dropRoll < 0.2) {
-        // 5% chance to drop shotgun
-        shotgunPickups.push(createShotgunPickup(position.clone()));
-        debugLog('Enemy dropped shotgun');
-    } else if (dropRoll < 0.25) {
-        // 5% chance to drop rocket launcher (very rare)
-        rocketLauncherPickups.push(createRocketLauncherPickup(position.clone()));
-        debugLog('Enemy dropped rocket launcher');
+    } else if (dropRoll < 0.25 && availableWeapons.length > 0) {
+        // 20% chance to drop a weapon (if there are available weapons)
+        const randomWeaponIndex = Math.floor(Math.random() * availableWeapons.length);
+        const weaponToDrop = availableWeapons[randomWeaponIndex];
+        
+        switch (weaponToDrop) {
+            case 'machineGun':
+                machineGunPickups.push(createMachineGunPickup(position.clone()));
+                debugLog('Enemy dropped machine gun');
+                break;
+            case 'sniperRifle':
+                sniperRiflePickups.push(createSniperRiflePickup(position.clone()));
+                debugLog('Enemy dropped sniper rifle');
+                break;
+            case 'shotgun':
+                shotgunPickups.push(createShotgunPickup(position.clone()));
+                debugLog('Enemy dropped shotgun');
+                break;
+            case 'rocketLauncher':
+                rocketLauncherPickups.push(createRocketLauncherPickup(position.clone()));
+                debugLog('Enemy dropped rocket launcher');
+                break;
+            case 'pistol':
+                pistolPickups.push(createPistolPickup(position.clone()));
+                debugLog('Enemy dropped pistol');
+                break;
+        }
     } else {
         // 75% chance to drop nothing
         debugLog('Enemy dropped nothing');
