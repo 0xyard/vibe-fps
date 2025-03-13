@@ -96,7 +96,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadows
-renderer.outputEncoding = THREE.sRGBEncoding; // Better color rendering
+renderer.outputColorSpace = THREE.SRGBColorSpace; // Better color rendering
 document.body.appendChild(renderer.domElement);
 
 // Controls setup
@@ -1289,10 +1289,8 @@ function applyRecoil() {
     }
     
     // Add vertical camera movement for effect (without rotation)
-    // Store the original camera position to recover from
-    if (!gameState.cameraOriginalY) {
-        gameState.cameraOriginalY = camera.position.y;
-    }
+    // Store the current camera position to recover from, preserving jumps
+    gameState.cameraOriginalY = camera.position.y;
     
     // Move camera up slightly - different amounts based on weapon
     let cameraRecoil = 0.05; // Default
@@ -1385,8 +1383,8 @@ function processRecoilRecovery(delta) {
         }
     }
     
-    // Recover camera position
-    if (gameState.cameraOriginalY && camera.position.y > gameState.cameraOriginalY) {
+    // Recover camera position - only adjust by the recoil amount, preserving any jump height
+    if (gameState.cameraOriginalY) {
         let cameraRecoil = 0.05; // Default
         
         if (gameState.currentGunType === 'sniperRifle') {
@@ -1395,7 +1393,8 @@ function processRecoilRecovery(delta) {
             cameraRecoil = 0.12;
         }
         
-        camera.position.y = gameState.cameraOriginalY + (cameraRecoil * (1 - recovery));
+        // Only adjust the recoil portion, not the entire Y position
+        camera.position.y = camera.position.y - (cameraRecoil * recovery);
     }
     
     // Gradually reduce recoil effect on bullets
@@ -1423,11 +1422,6 @@ function processRecoilRecovery(delta) {
         // Reset shotgun position
         shotgun.position.set(0.3, -0.3, -0.5);
         shotgun.rotation.set(0, 0, 0);
-        
-        // Reset camera position
-        if (gameState.cameraOriginalY) {
-            camera.position.y = gameState.cameraOriginalY;
-        }
         
         // Reset recoil effect on bullets
         gameState.currentRecoil = { x: 0, y: 0 };
@@ -1471,27 +1465,16 @@ function interactWithPickups() {
     
     // Helper function to handle weapon pickup
     function handleWeaponPickup(pickupArray, pickupType, ammoAmount, pickupName) {
+        // Skip if this is the player's current weapon type
+        if (gameState.currentGunType === pickupType) return false;
+        
         for (let i = pickupArray.length - 1; i >= 0; i--) {
             const pickup = pickupArray[i];
             const distance = playerPosition.distanceTo(pickup.mesh.position);
             
             if (distance < 2) { // Interaction range
-                // Drop current gun and create a pickup for it
-                const dropPosition = playerPosition.clone();
-                dropPosition.y = 0.5; // Slightly above ground
-                
-                // Create pickup for current weapon
-                if (gameState.currentGunType === 'pistol') {
-                    pistolPickups.push(createPistolPickup(dropPosition));
-                } else if (gameState.currentGunType === 'machineGun') {
-                    machineGunPickups.push(createMachineGunPickup(dropPosition));
-                } else if (gameState.currentGunType === 'sniperRifle') {
-                    sniperRiflePickups.push(createSniperRiflePickup(dropPosition));
-                } else if (gameState.currentGunType === 'shotgun') {
-                    shotgunPickups.push(createShotgunPickup(dropPosition));
-                } else if (gameState.currentGunType === 'rocketLauncher') {
-                    rocketLauncherPickups.push(createRocketLauncherPickup(dropPosition));
-                }
+                // Remove current weapon from scene (don't create a pickup for it)
+                // Just update the weapon visibility
                 
                 // Pick up new weapon
                 gameState.currentGunType = pickupType;
@@ -2166,16 +2149,14 @@ function createHealthPickup(position) {
 
 // Create a bullet projectile
 function createBulletProjectile(position, direction) {
+    // Create a group for the bullet and trail
+    const bulletGroup = new THREE.Group();
+    
     // Create bullet geometry and material
     const bulletGeometry = new THREE.SphereGeometry(0.05, 8, 8);
     const bulletMaterial = new THREE.MeshBasicMaterial({ color: 0xFFFF00 }); // Bright yellow bullet
     const bullet = new THREE.Mesh(bulletGeometry, bulletMaterial);
-    
-    // Set initial position (at gun barrel)
-    bullet.position.copy(position);
-    
-    // Add to scene
-    scene.add(bullet);
+    bulletGroup.add(bullet);
     
     // Add trail effect
     const trailGeometry = new THREE.CylinderGeometry(0.01, 0.01, 0.2, 8);
@@ -2187,11 +2168,22 @@ function createBulletProjectile(position, direction) {
     const trail = new THREE.Mesh(trailGeometry, trailMaterial);
     trail.rotation.x = Math.PI / 2;
     trail.position.z = 0.1; // Position behind the bullet
-    bullet.add(trail);
+    bulletGroup.add(trail);
+    
+    // Set initial position
+    bulletGroup.position.copy(position);
+    
+    // Orient the bullet group to face in the direction of travel
+    const quaternion = new THREE.Quaternion();
+    quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), direction.clone().normalize());
+    bulletGroup.quaternion.copy(quaternion);
+    
+    // Add to scene
+    scene.add(bulletGroup);
     
     // Return bullet object with metadata
     return {
-        mesh: bullet,
+        mesh: bulletGroup,
         direction: direction.clone(),
         speed: 20, // Units per second
         distance: 0,
@@ -2212,6 +2204,12 @@ function updateBulletProjectiles(delta) {
         const moveDistance = bullet.speed * delta;
         bullet.distance += moveDistance;
         bulletPosition.add(bullet.direction.clone().multiplyScalar(moveDistance));
+        
+        // Update projectile orientation to match its travel direction
+        // Create a quaternion from the direction vector
+        const quaternion = new THREE.Quaternion();
+        quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), bullet.direction.clone().normalize());
+        bullet.mesh.quaternion.copy(quaternion);
         
         // Flag to track if bullet hit an enemy
         let hitEnemy = false;
@@ -4269,57 +4267,74 @@ function checkForNearbyPickups() {
     let nearestDistance = Infinity;
     
     // Check for machine gun pickups
-    for (const pickup of machineGunPickups) {
-        const distance = playerPosition.distanceTo(pickup.mesh.position);
-        
-        if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
-            nearestDistance = distance;
-            nearestPickupType = 'machineGun';
-            foundNearbyPickup = true;
+    if (gameState.currentGunType !== 'machineGun') {
+        for (const pickup of machineGunPickups) {
+            const distance = playerPosition.distanceTo(pickup.mesh.position);
+            
+            if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
+                nearestDistance = distance;
+                nearestPickupType = 'machineGun';
+                foundNearbyPickup = true;
+            }
         }
     }
     
     // Check for pistol pickups
-    for (const pickup of pistolPickups) {
-        const distance = playerPosition.distanceTo(pickup.mesh.position);
-        
-        if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
-            nearestDistance = distance;
-            nearestPickupType = 'pistol';
-            foundNearbyPickup = true;
+    if (gameState.currentGunType !== 'pistol') {
+        for (const pickup of pistolPickups) {
+            const distance = playerPosition.distanceTo(pickup.mesh.position);
+            
+            if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
+                nearestDistance = distance;
+                nearestPickupType = 'pistol';
+                foundNearbyPickup = true;
+            }
         }
     }
     
     // Check for sniper rifle pickups
-    for (const pickup of sniperRiflePickups) {
-        const distance = playerPosition.distanceTo(pickup.mesh.position);
-        
-        if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
-            nearestDistance = distance;
-            nearestPickupType = 'sniperRifle';
-            foundNearbyPickup = true;
+    if (gameState.currentGunType !== 'sniperRifle') {
+        for (const pickup of sniperRiflePickups) {
+            const distance = playerPosition.distanceTo(pickup.mesh.position);
+            
+            if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
+                nearestDistance = distance;
+                nearestPickupType = 'sniperRifle';
+                foundNearbyPickup = true;
+            }
         }
     }
     
     // Check for shotgun pickups
-    for (const pickup of shotgunPickups) {
-        const distance = playerPosition.distanceTo(pickup.mesh.position);
-        
-        if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
-            nearestDistance = distance;
-            nearestPickupType = 'shotgun';
-            foundNearbyPickup = true;
+    if (gameState.currentGunType !== 'shotgun') {
+        for (const pickup of shotgunPickups) {
+            const distance = playerPosition.distanceTo(pickup.mesh.position);
+            
+            if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
+                nearestDistance = distance;
+                nearestPickupType = 'shotgun';
+                foundNearbyPickup = true;
+            }
         }
     }
     
-    // Show or hide hint based on nearby pickups
-    if (foundNearbyPickup) {
-        // Only show hint if pickup type changed or it's been more than 5 seconds
-        if (nearestPickupType !== gameState.nearbyPickup || 
-            performance.now() - gameState.lastPickupHintTime > 5000) {
-            showPickupHint(nearestPickupType);
-            gameState.nearbyPickup = nearestPickupType;
+    // Check for rocket launcher pickups
+    if (gameState.currentGunType !== 'rocketLauncher') {
+        for (const pickup of rocketLauncherPickups) {
+            const distance = playerPosition.distanceTo(pickup.mesh.position);
+            
+            if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
+                nearestDistance = distance;
+                nearestPickupType = 'rocketLauncher';
+                foundNearbyPickup = true;
+            }
         }
+    }
+    
+    // Show or hide pickup hint
+    if (foundNearbyPickup && nearestPickupType) {
+        showPickupHint(nearestPickupType);
+        gameState.nearbyPickup = nearestPickupType;
     } else {
         // Hide hint if no pickups are nearby
         hidePickupHint();
@@ -4663,14 +4678,16 @@ function createRocketProjectile(position, direction) {
     const bodyGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 8);
     const bodyMaterial = new THREE.MeshBasicMaterial({ color: 0x777777 });
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
-    body.rotation.x = Math.PI / 2; // Orient along z-axis
+    // Rotate to align with Z-axis (forward direction in Three.js)
+    body.rotation.x = Math.PI / 2;
     rocketGroup.add(body);
     
     // Rocket nose cone
     const noseGeometry = new THREE.ConeGeometry(0.05, 0.1, 8);
     const noseMaterial = new THREE.MeshBasicMaterial({ color: 0xFF0000 });
     const nose = new THREE.Mesh(noseGeometry, noseMaterial);
-    nose.rotation.x = Math.PI / 2; // Orient along z-axis
+    // Rotate to align with Z-axis
+    nose.rotation.x = Math.PI / 2;
     nose.position.z = -0.2; // Position at front of rocket
     rocketGroup.add(nose);
     
@@ -4736,6 +4753,12 @@ function createRocketProjectile(position, direction) {
         rocketGroup.add(smoke);
         smokeParticles.push(smoke);
     }
+    
+    // Orient the rocket to face in the direction of travel
+    // Create a quaternion from the direction vector
+    const quaternion = new THREE.Quaternion();
+    quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), direction.clone().normalize());
+    rocketGroup.quaternion.copy(quaternion);
     
     // Animate the flame and smoke
     const animateRocket = () => {
@@ -5255,26 +5278,61 @@ function handleEnemyDefeat(enemy, position) {
     
     // Random drop chance
     const dropRoll = Math.random();
+    
+    // Determine which weapons can be dropped (exclude current weapon)
+    const availableWeapons = [];
+    
+    if (gameState.currentGunType !== 'machineGun') {
+        availableWeapons.push('machineGun');
+    }
+    
+    if (gameState.currentGunType !== 'sniperRifle') {
+        availableWeapons.push('sniperRifle');
+    }
+    
+    if (gameState.currentGunType !== 'shotgun') {
+        availableWeapons.push('shotgun');
+    }
+    
+    if (gameState.currentGunType !== 'rocketLauncher') {
+        availableWeapons.push('rocketLauncher');
+    }
+    
+    if (gameState.currentGunType !== 'pistol') {
+        availableWeapons.push('pistol');
+    }
+    
     if (dropRoll < 0.05) {
         // 5% chance to drop health
         healthPickups.push(createHealthPickup(position.clone()));
         debugLog('Enemy dropped health');
-    } else if (dropRoll < 0.1) {
-        // 5% chance to drop machine gun
-        machineGunPickups.push(createMachineGunPickup(position.clone()));
-        debugLog('Enemy dropped machine gun');
-    } else if (dropRoll < 0.15) {
-        // 5% chance to drop sniper rifle (rare)
-        sniperRiflePickups.push(createSniperRiflePickup(position.clone()));
-        debugLog('Enemy dropped sniper rifle');
-    } else if (dropRoll < 0.2) {
-        // 5% chance to drop shotgun
-        shotgunPickups.push(createShotgunPickup(position.clone()));
-        debugLog('Enemy dropped shotgun');
-    } else if (dropRoll < 0.25) {
-        // 5% chance to drop rocket launcher (very rare)
-        rocketLauncherPickups.push(createRocketLauncherPickup(position.clone()));
-        debugLog('Enemy dropped rocket launcher');
+    } else if (dropRoll < 0.25 && availableWeapons.length > 0) {
+        // 20% chance to drop a weapon (if there are available weapons)
+        const randomWeaponIndex = Math.floor(Math.random() * availableWeapons.length);
+        const weaponToDrop = availableWeapons[randomWeaponIndex];
+        
+        switch (weaponToDrop) {
+            case 'machineGun':
+                machineGunPickups.push(createMachineGunPickup(position.clone()));
+                debugLog('Enemy dropped machine gun');
+                break;
+            case 'sniperRifle':
+                sniperRiflePickups.push(createSniperRiflePickup(position.clone()));
+                debugLog('Enemy dropped sniper rifle');
+                break;
+            case 'shotgun':
+                shotgunPickups.push(createShotgunPickup(position.clone()));
+                debugLog('Enemy dropped shotgun');
+                break;
+            case 'rocketLauncher':
+                rocketLauncherPickups.push(createRocketLauncherPickup(position.clone()));
+                debugLog('Enemy dropped rocket launcher');
+                break;
+            case 'pistol':
+                pistolPickups.push(createPistolPickup(position.clone()));
+                debugLog('Enemy dropped pistol');
+                break;
+        }
     } else {
         // 75% chance to drop nothing
         debugLog('Enemy dropped nothing');
