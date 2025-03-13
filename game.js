@@ -1289,10 +1289,8 @@ function applyRecoil() {
     }
     
     // Add vertical camera movement for effect (without rotation)
-    // Store the original camera position to recover from
-    if (!gameState.cameraOriginalY) {
-        gameState.cameraOriginalY = camera.position.y;
-    }
+    // Store the current camera position to recover from, preserving jumps
+    gameState.cameraOriginalY = camera.position.y;
     
     // Move camera up slightly - different amounts based on weapon
     let cameraRecoil = 0.05; // Default
@@ -1385,8 +1383,8 @@ function processRecoilRecovery(delta) {
         }
     }
     
-    // Recover camera position
-    if (gameState.cameraOriginalY && camera.position.y > gameState.cameraOriginalY) {
+    // Recover camera position - only adjust by the recoil amount, preserving any jump height
+    if (gameState.cameraOriginalY) {
         let cameraRecoil = 0.05; // Default
         
         if (gameState.currentGunType === 'sniperRifle') {
@@ -1395,7 +1393,8 @@ function processRecoilRecovery(delta) {
             cameraRecoil = 0.12;
         }
         
-        camera.position.y = gameState.cameraOriginalY + (cameraRecoil * (1 - recovery));
+        // Only adjust the recoil portion, not the entire Y position
+        camera.position.y = camera.position.y - (cameraRecoil * recovery);
     }
     
     // Gradually reduce recoil effect on bullets
@@ -1423,11 +1422,6 @@ function processRecoilRecovery(delta) {
         // Reset shotgun position
         shotgun.position.set(0.3, -0.3, -0.5);
         shotgun.rotation.set(0, 0, 0);
-        
-        // Reset camera position
-        if (gameState.cameraOriginalY) {
-            camera.position.y = gameState.cameraOriginalY;
-        }
         
         // Reset recoil effect on bullets
         gameState.currentRecoil = { x: 0, y: 0 };
