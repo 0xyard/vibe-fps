@@ -5269,6 +5269,21 @@ function handleEnemyDefeat(enemy, position) {
     // Create death animation (which now plays the appropriate death sound)
     createDeathAnimation(enemy, position);
     
+    // Spider enemy special behavior - spawn more spiders based on generation
+    if (enemy.type === 'spider') {
+        const grandchildSpiderWave = 5;
+        // First generation spiders spawn second generation
+        if (!enemy.isChildSpider) {
+            debugLog('First generation spider defeated - spawning two child spiders');
+            spawnChildSpiders(position, 2, 50, 0.03, true, false);
+        } 
+        // Second generation spiders spawn third generation after wave 2
+        else if (enemy.isChildSpider && !enemy.isGrandchildSpider && gameState.level > grandchildSpiderWave) {
+            debugLog('Second generation spider defeated - spawning third generation spiders');
+            spawnChildSpiders(position, 3, 30, 0.035, true, true);
+        }
+    }
+    
     // Remove enemy from scene
     scene.remove(enemy.mesh);
     
@@ -5350,6 +5365,46 @@ function handleEnemyDefeat(enemy, position) {
         setTimeout(() => {
             spawnEnemies();
         }, 2000);
+    }
+}
+
+// Helper function to spawn child spiders
+function spawnChildSpiders(position, count, health, speed, isChild, isGrandchild) {
+    for (let i = 0; i < count; i++) {
+        // Create a slight offset for each child spider
+        const offset = new THREE.Vector3(
+            (Math.random() - 0.5) * 2, // X offset (-1 to 1)
+            0,                          // Y offset (keep on ground)
+            (Math.random() - 0.5) * 2   // Z offset (-1 to 1)
+        );
+        
+        // Create position for child spider
+        const childPosition = position.clone().add(offset);
+        
+        // Spawn a child spider at this position
+        const childEnemy = createSpiderEnemy();
+        childEnemy.position.copy(childPosition);
+        scene.add(childEnemy);
+        
+        // Add to enemies array with appropriate flags
+        enemies.push({
+            mesh: childEnemy,
+            health: health, // Decreasing health for each generation
+            speed: speed, // Increasing speed for each generation
+            bounceOffset: Math.random() * Math.PI * 2,
+            lastPosition: childPosition.clone(),
+            stuckTime: 0,
+            pathfindingOffset: new THREE.Vector3(0, 0, 0),
+            lastPathChange: 0,
+            type: 'spider',
+            bounceAmount: 0.05,
+            flyHeight: 0,
+            isChildSpider: isChild, // Mark as child spider
+            isGrandchildSpider: isGrandchild // Mark as grandchild spider
+        });
+        
+        // Create teleport effect at spawn location
+        createTeleportEffect(childPosition);
     }
 }
 
