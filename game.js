@@ -96,7 +96,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadows
-renderer.outputEncoding = THREE.sRGBEncoding; // Better color rendering
+renderer.outputColorSpace = THREE.SRGBColorSpace; // Better color rendering
 document.body.appendChild(renderer.domElement);
 
 // Controls setup
