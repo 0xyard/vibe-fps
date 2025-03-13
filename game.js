@@ -3319,9 +3319,9 @@ function animate() {
                         const playerPos = new THREE.Vector3();
                         camera.getWorldPosition(playerPos);
                         
-                        // Random angle and distance from player (between 3-8 units away)
+                        // Random angle and distance from player (between 5-10 units away)
                         const angle = Math.random() * Math.PI * 2;
-                        const distance = 3 + Math.random() * 5;
+                        const distance = 5 + Math.random() * 5;
                         
                         // Calculate new position
                         const newX = playerPos.x + Math.sin(angle) * distance;
