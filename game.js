@@ -2149,16 +2149,14 @@ function createHealthPickup(position) {
 
 // Create a bullet projectile
 function createBulletProjectile(position, direction) {
+    // Create a group for the bullet and trail
+    const bulletGroup = new THREE.Group();
+    
     // Create bullet geometry and material
     const bulletGeometry = new THREE.SphereGeometry(0.05, 8, 8);
     const bulletMaterial = new THREE.MeshBasicMaterial({ color: 0xFFFF00 }); // Bright yellow bullet
     const bullet = new THREE.Mesh(bulletGeometry, bulletMaterial);
-    
-    // Set initial position (at gun barrel)
-    bullet.position.copy(position);
-    
-    // Add to scene
-    scene.add(bullet);
+    bulletGroup.add(bullet);
     
     // Add trail effect
     const trailGeometry = new THREE.CylinderGeometry(0.01, 0.01, 0.2, 8);
@@ -2170,11 +2168,22 @@ function createBulletProjectile(position, direction) {
     const trail = new THREE.Mesh(trailGeometry, trailMaterial);
     trail.rotation.x = Math.PI / 2;
     trail.position.z = 0.1; // Position behind the bullet
-    bullet.add(trail);
+    bulletGroup.add(trail);
+    
+    // Set initial position
+    bulletGroup.position.copy(position);
+    
+    // Orient the bullet group to face in the direction of travel
+    const quaternion = new THREE.Quaternion();
+    quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), direction.clone().normalize());
+    bulletGroup.quaternion.copy(quaternion);
+    
+    // Add to scene
+    scene.add(bulletGroup);
     
     // Return bullet object with metadata
     return {
-        mesh: bullet,
+        mesh: bulletGroup,
         direction: direction.clone(),
         speed: 20, // Units per second
         distance: 0,
@@ -2195,6 +2204,12 @@ function updateBulletProjectiles(delta) {
         const moveDistance = bullet.speed * delta;
         bullet.distance += moveDistance;
         bulletPosition.add(bullet.direction.clone().multiplyScalar(moveDistance));
+        
+        // Update projectile orientation to match its travel direction
+        // Create a quaternion from the direction vector
+        const quaternion = new THREE.Quaternion();
+        quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), bullet.direction.clone().normalize());
+        bullet.mesh.quaternion.copy(quaternion);
         
         // Flag to track if bullet hit an enemy
         let hitEnemy = false;
@@ -4663,14 +4678,16 @@ function createRocketProjectile(position, direction) {
     const bodyGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 8);
     const bodyMaterial = new THREE.MeshBasicMaterial({ color: 0x777777 });
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
-    body.rotation.x = Math.PI / 2; // Orient along z-axis
+    // Rotate to align with Z-axis (forward direction in Three.js)
+    body.rotation.x = Math.PI / 2;
     rocketGroup.add(body);
     
     // Rocket nose cone
     const noseGeometry = new THREE.ConeGeometry(0.05, 0.1, 8);
     const noseMaterial = new THREE.MeshBasicMaterial({ color: 0xFF0000 });
     const nose = new THREE.Mesh(noseGeometry, noseMaterial);
-    nose.rotation.x = Math.PI / 2; // Orient along z-axis
+    // Rotate to align with Z-axis
+    nose.rotation.x = Math.PI / 2;
     nose.position.z = -0.2; // Position at front of rocket
     rocketGroup.add(nose);
     
@@ -4736,6 +4753,12 @@ function createRocketProjectile(position, direction) {
         rocketGroup.add(smoke);
         smokeParticles.push(smoke);
     }
+    
+    // Orient the rocket to face in the direction of travel
+    // Create a quaternion from the direction vector
+    const quaternion = new THREE.Quaternion();
+    quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), direction.clone().normalize());
+    rocketGroup.quaternion.copy(quaternion);
     
     // Animate the flame and smoke
     const animateRocket = () => {
