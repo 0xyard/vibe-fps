@@ -744,6 +744,83 @@
                 font-size: 20px;
             }
         }
+        
+        /* Add styles for Twitter login */
+        .twitter-login-container {
+            margin-top: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .social-login-button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #1DA1F2;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 10px 15px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: background-color 0.3s;
+            width: 100%;
+            max-width: 250px;
+        }
+        
+        .social-login-button:hover {
+            background-color: #0c85d0;
+        }
+        
+        .social-icon {
+            width: 24px;
+            height: 24px;
+            margin-right: 10px;
+        }
+        
+        .twitter-profile {
+            display: flex;
+            align-items: center;
+            margin-top: 10px;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 8px 12px;
+            border-radius: 20px;
+            max-width: 250px;
+            width: 100%;
+        }
+        
+        .twitter-profile-img {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        
+        .twitter-profile-name {
+            flex: 1;
+            font-weight: bold;
+            color: #333;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .small-button {
+            background-color: #f44336;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 12px;
+            cursor: pointer;
+            margin-left: 8px;
+        }
+        
+        .game-over-twitter {
+            margin-top: 15px;
+        }
     </style>
     <!-- Vercel Web Analytics -->
     <script>
@@ -795,7 +872,17 @@
             <div class="username-section">
                 <h3>YOUR PLAYER NAME</h3>
                 <div class="submit-container">
-                    <input type="text" id="titlePlayerNameInput" placeholder="Enter your name">
+                    <input type="text" id="titlePlayerNameInput" placeholder="Enter player name">
+                </div>
+                <div class="twitter-login-container">
+                    <button id="twitterLoginButton" class="social-login-button">
+                        Login with 𝕏
+                    </button>
+                    <div class="twitter-profile" style="display: none;">
+                        <img src="" alt="Profile" class="twitter-profile-img">
+                        <span class="twitter-profile-name"></span>
+                        <button id="twitterLogoutButton" class="small-button">Logout</button>
+                    </div>
                 </div>
             </div>
             
@@ -828,8 +915,17 @@
                 <p>Wave: <span id="finalLevel">1</span></p>
             </div>
             <div class="submit-container">
-                <input type="text" id="playerNameInput" placeholder="Enter your name" style="display: none;">
+                <input type="text" id="playerNameInput" placeholder="Random name will be used" style="display: none;">
                 <button id="submitScoreButton">SUBMIT SCORE</button>
+                <div class="twitter-login-container game-over-twitter">
+                    <button id="gameOverTwitterLoginButton" class="social-login-button">
+                        Login with 𝕏
+                    </button>
+                    <div class="twitter-profile" style="display: none;">
+                        <img src="" alt="Profile" class="twitter-profile-img">
+                        <span class="twitter-profile-name"></span>
+                    </div>
+                </div>
             </div>
             <span id="scoreSubmitStatus"></span>
             <button id="restartButton">RESTART</button>
@@ -898,6 +994,7 @@
         }
     </script>
     <script type="module" src="game.js"></script>
+    <script type="module" src="twitter-auth.js"></script>
     <script>
         // Show appropriate menu controls based on device type
         document.addEventListener('DOMContentLoaded', function() {

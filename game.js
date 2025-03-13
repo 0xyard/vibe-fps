@@ -1963,6 +1963,12 @@ function init() {
     roundNotification = createRoundNotification();
     scoreDisplay = createScoreDisplay();
     
+    // Initialize Twitter login buttons
+    initTwitterLoginButtons();
+    
+    // Initialize player name input with random name if needed
+    initPlayerNameInput();
+    
     // Initialize virtual joystick for mobile
     if (isMobileDevice()) {
         initJoystick();
@@ -2105,9 +2111,18 @@ function hideTitleScreen() {
 function startGame() {
     // Save player name from title screen input
     const playerNameInput = document.getElementById('titlePlayerNameInput');
+    
+    // Check if the input has a value (either user-entered or from Twitter)
     if (playerNameInput && playerNameInput.value.trim() !== '') {
+        // Save the name regardless of whether it came from Twitter or manual entry
         import('./leaderboard.js').then(module => {
             module.savePlayerName(playerNameInput.value.trim());
+        });
+    } else {
+        // If no name is provided, generate a random username
+        const randomUsername = generateRandomUsername();
+        import('./leaderboard.js').then(module => {
+            module.savePlayerName(randomUsername);
         });
     }
     
@@ -2816,240 +2831,136 @@ function createPistolPickup(position) {
 function checkGameOver() {
     if (gameState.health <= 0 && !gameState.gameOver) {
         gameState.gameOver = true;
-        gameState.clickedGameOverButton = false; // Reset the flag
         
-        // Update final score and level in the game over screen
-        document.getElementById('finalScore').textContent = gameState.score;
-        document.getElementById('finalLevel').textContent = gameState.level;
-        
-        // Pre-fill player name input if available and auto-submit score
-        import('./leaderboard.js').then(module => {
-            const playerName = module.getPlayerName();
-            const playerNameInput = document.getElementById('playerNameInput');
-            const score = gameState.score;
-            const wave = gameState.level;
-            const statusElement = document.getElementById('scoreSubmitStatus');
-            const submitButton = document.getElementById('submitScoreButton');
-            
-            // Always auto-submit if we have a player name
-            if (playerName && playerName.trim() !== '') {
-                // Set the hidden input value
-                if (playerNameInput) {
-                    playerNameInput.value = playerName;
-                }
-                
-                // Show loading state
-                if (submitButton) {
-                    submitButton.disabled = true;
-                    submitButton.textContent = 'SUBMITTING...';
-                    submitButton.style.backgroundColor = '#666';
-                }
-                
-                // Submit the score
-                module.submitScore(playerName, score, wave).then(result => {
-                    if (result.success) {
-                        if (statusElement) {
-                            statusElement.textContent = 'Score submitted successfully!';
-                            statusElement.style.color = '#4CAF50';
-                            statusElement.style.display = 'block';
-                        }
-                        
-                        // Keep submit button hidden on success
-                        if (submitButton) {
-                            submitButton.style.display = 'none';
-                        }
-                    } else {
-                        if (statusElement) {
-                            statusElement.textContent = `Error: ${result.error}. Try submitting manually.`;
-                            statusElement.style.color = '#ff3a3a';
-                            statusElement.style.display = 'block';
-                        }
-                        
-                        // Show and re-enable the submit button on failure
-                        if (submitButton) {
-                            submitButton.style.display = 'block';
-                            submitButton.disabled = false;
-                            submitButton.textContent = 'SUBMIT SCORE';
-                            submitButton.style.backgroundColor = '#3a86ff';
-                        }
-                    }
-                }).catch(error => {
-                    // Handle any unexpected errors
-                    console.error('Error submitting score:', error);
-                    
-                    if (statusElement) {
-                        statusElement.textContent = 'An unexpected error occurred. Please try submitting manually.';
-                        statusElement.style.color = '#ff3a3a';
-                        statusElement.style.display = 'block';
-                    }
-                    
-                    // Show and re-enable the submit button on error
-                    if (submitButton) {
-                        submitButton.style.display = 'block';
-                        submitButton.disabled = false;
-                        submitButton.textContent = 'SUBMIT SCORE';
-                        submitButton.style.backgroundColor = '#3a86ff';
-                    }
-                });
+        // Stop all sounds
+        Object.values(soundEffects).forEach(sound => {
+            if (sound && sound.isPlaying) {
+                sound.stop();
             }
         });
+        
+        // Play game over sound
+        if (soundEffects.enemyDeath) {
+            playSound(soundEffects.enemyDeath, 0.5);
+        }
+        
+        // Exit pointer lock
+        safeExitPointerLock();
         
         // Show game over screen
         const gameOverScreen = document.getElementById('gameOver');
-        gameOverScreen.style.display = 'block';
-        
-        // Completely disable pointer lock controls
-        controls.enabled = false;
-        safeExitPointerLock();
-        
-        // Add a click event listener to the entire document to prevent pointer lock
-        const preventLock = (e) => {
-            // Only prevent if game is over and not clicking on a button or input
-            if (gameState.gameOver && 
-                e.target.id !== 'restartButton' && 
-                e.target.id !== 'submitScoreButton' && 
-                e.target.id !== 'viewLeaderboardButton' &&
-                e.target.id !== 'playerNameInput') {
-                e.stopPropagation();
-                safeExitPointerLock();
-            }
-        };
-        
-        // Remove any existing listener first
-        document.removeEventListener('click', preventLock);
-        document.addEventListener('click', preventLock);
-        
-        // Clear any existing event listeners from the buttons by cloning them
-        const setupGameOverButton = (id, callback) => {
-            const button = document.getElementById(id);
-            if (button) {
-                // Save the current display style
-                const currentDisplay = button.style.display;
+        if (gameOverScreen) {
+            // Update final score and level
+            document.getElementById('finalScore').textContent = gameState.score;
+            document.getElementById('finalLevel').textContent = gameState.level;
+            
+            // Check if user is logged in with Twitter
+            import('./twitter-auth.js').then(module => {
+                const isTwitterLoggedIn = module.isUserSignedIn();
+                const twitterUser = module.getCurrentUser();
                 
-                // Clone the button to remove any existing event listeners
-                const newButton = button.cloneNode(true);
+                // Get player name input and submit container
+                const playerNameInput = document.getElementById('playerNameInput');
+                const submitContainer = playerNameInput ? playerNameInput.closest('.submit-container') : null;
                 
-                // Restore the display style
-                newButton.style.display = currentDisplay;
-                
-                button.parentNode.replaceChild(newButton, button);
-                
-                // Add the new event listener
-                newButton.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    gameState.clickedGameOverButton = true;
-                    callback(e);
-                });
-            }
-        };
-        
-        // Set up the restart button
-        setupGameOverButton('restartButton', () => {
-            restartGame();
-            controls.lock();
-        });
-        
-        // Set up the submit score button
-        setupGameOverButton('submitScoreButton', () => {
-            // Check if the button is already disabled (score already submitted)
-            const submitButton = document.getElementById('submitScoreButton');
-            if (submitButton && submitButton.disabled) {
-                return; // Score already submitted
+                if (isTwitterLoggedIn && twitterUser && twitterUser.user_metadata?.full_name) {
+                    // If logged in with Twitter, hide the input and show a message
+                    if (playerNameInput) {
+                        playerNameInput.value = twitterUser.user_metadata.full_name;
+                        playerNameInput.style.display = 'none';
+                    }
+                    
+                    // Hide Twitter login button
+                    const twitterLoginButton = document.getElementById('gameOverTwitterLoginButton');
+                    if (twitterLoginButton) {
+                        twitterLoginButton.style.display = 'none';
+                    }
+                    
+                    // Show Twitter profile
+                    const twitterProfile = document.querySelector('.game-over-twitter .twitter-profile');
+                    if (twitterProfile) {
+                        twitterProfile.style.display = 'flex';
+                        
+                        // Update profile image and name
+                        const profileImg = twitterProfile.querySelector('.twitter-profile-img');
+                        if (profileImg && twitterUser.user_metadata?.avatar_url) {
+                            profileImg.src = twitterUser.user_metadata.avatar_url;
+                        }
+                        
+                        const profileName = twitterProfile.querySelector('.twitter-profile-name');
+                        if (profileName) {
+                            profileName.textContent = twitterUser.user_metadata.full_name;
+                        }
+                    }
+                } else {
+                    // If not logged in with Twitter, show the input
+                    if (playerNameInput) {
+                        playerNameInput.style.display = '';
+                        
+                        // Get stored player name
+                        import('./leaderboard.js').then(leaderboardModule => {
+                            leaderboardModule.getPlayerName().then(storedName => {
+                                if (storedName) {
+                                    playerNameInput.value = storedName;
+                                } else {
+                                    // Generate a random username if no stored name
+                                    playerNameInput.value = generateRandomUsername();
+                                }
+                            });
+                        });
+                    }
+                    
+                    // Show Twitter login button
+                    const twitterLoginButton = document.getElementById('gameOverTwitterLoginButton');
+                    if (twitterLoginButton) {
+                        twitterLoginButton.style.display = 'flex';
+                    }
+                    
+                    // Hide Twitter profile
+                    const twitterProfile = document.querySelector('.game-over-twitter .twitter-profile');
+                    if (twitterProfile) {
+                        twitterProfile.style.display = 'none';
+                    }
+                }
+            }).catch(err => {
+                console.error("Error checking Twitter auth status:", err);
+            });
+            
+            gameOverScreen.style.display = 'block';
+            
+            // Set up restart button
+            const restartButton = document.getElementById('restartButton');
+            if (restartButton) {
+                restartButton.addEventListener('click', restartGame);
             }
             
-            // Import the necessary functions from leaderboard.js
-            import('./leaderboard.js').then(module => {
-                // Get player name from input or stored value
-                const playerNameInput = document.getElementById('playerNameInput');
-                let playerName = '';
-                
-                if (playerNameInput && playerNameInput.value.trim() !== '') {
-                    playerName = playerNameInput.value.trim();
-                } else {
-                    // If input is empty or hidden, use stored player name
-                    playerName = module.getPlayerName() || '';
-                }
-                
-                const score = parseInt(document.getElementById('finalScore').textContent, 10) || 0;
-                const wave = parseInt(document.getElementById('finalLevel').textContent, 10) || 1;
-                const statusElement = document.getElementById('scoreSubmitStatus');
-                
-                if (!playerName) {
-                    if (statusElement) {
-                        statusElement.textContent = 'No player name found';
-                        statusElement.style.color = '#ff3a3a';
-                        statusElement.style.display = 'block';
-                    }
-                    return;
-                }
-                
-                // Save the player name
-                module.savePlayerName(playerName);
-                
-                // Show loading state
-                if (submitButton) {
-                    submitButton.disabled = true;
-                    submitButton.textContent = 'SUBMITTING...';
-                    submitButton.style.backgroundColor = '#666';
-                }
-                
-                // Submit the score
-                module.submitScore(playerName, score, wave).then(result => {
-                    if (result.success) {
-                        if (statusElement) {
-                            statusElement.textContent = 'Score submitted successfully! Redirecting to leaderboard...';
-                            statusElement.style.color = '#4CAF50';
-                            statusElement.style.display = 'block';
-                        }
-                        
-                        // Update the submit button text
-                        if (submitButton) {
-                            submitButton.textContent = 'SUBMITTED';
-                        }
-                        
-                        // Redirect to the leaderboard page after a short delay
-                        setTimeout(() => {
-                            window.location.href = 'leaderboard.html';
-                        }, 1500); // 1.5 second delay to show the success message
-                    } else {
-                        if (statusElement) {
-                            statusElement.textContent = `Error: ${result.error}`;
-                            statusElement.style.color = '#ff3a3a';
-                            statusElement.style.display = 'block';
-                        }
-                        
-                        // Re-enable the submit button
-                        if (submitButton) {
-                            submitButton.disabled = false;
-                            submitButton.textContent = 'SUBMIT SCORE';
-                            submitButton.style.backgroundColor = '#3a86ff';
-                        }
-                    }
-                }).catch(error => {
-                    // Handle any unexpected errors
-                    console.error('Error submitting score:', error);
-                    
-                    if (statusElement) {
-                        statusElement.textContent = 'An unexpected error occurred. Please try again.';
-                        statusElement.style.color = '#ff3a3a';
-                        statusElement.style.display = 'block';
-                    }
-                    
-                    // Re-enable the submit button
-                    if (submitButton) {
-                        submitButton.disabled = false;
-                        submitButton.textContent = 'SUBMIT SCORE';
-                        submitButton.style.backgroundColor = '#3a86ff';
-                    }
-                });
+            // Prevent mouse lock when clicking on game over screen
+            gameOverScreen.addEventListener('click', preventLock);
+            
+            // Set up other game over buttons
+            setupGameOverButton('submitScoreButton', () => {
+                // Submit score logic is handled in leaderboard.js
             });
-        });
-        
-        // Set up the view leaderboard button
-        setupGameOverButton('viewLeaderboardButton', () => {
-            window.location.href = 'leaderboard.html';
-        });
+            
+            setupGameOverButton('viewLeaderboardButton', () => {
+                window.location.href = 'leaderboard.html';
+            });
+            
+            // Helper functions for game over screen
+            function preventLock(e) {
+                e.stopPropagation();
+            }
+            
+            function setupGameOverButton(id, callback) {
+                const button = document.getElementById(id);
+                if (button) {
+                    button.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        callback();
+                    });
+                }
+            }
+        }
     }
 }
 
@@ -4790,6 +4701,7 @@ function createExplosion(position) {
     // Create explosion group
     const explosionGroup = new THREE.Group();
     explosionGroup.position.copy(position);
+    scene.add(explosionGroup);
     
     // Create main explosion sphere
     const explosionGeometry = new THREE.SphereGeometry(0.5, 16, 16);
@@ -6569,4 +6481,244 @@ function reduceShadowQualityForMobile() {
         dirLight.shadow.mapSize.width = 1024;  // Reduced from 2048
         dirLight.shadow.mapSize.height = 1024; // Reduced from 2048
     }
+}
+
+// Initialize Twitter login buttons
+function initTwitterLoginButtons() {
+    // Import Twitter auth functions
+    import('./twitter-auth.js').then(module => {
+        // Title screen Twitter login button
+        const twitterLoginButton = document.getElementById('twitterLoginButton');
+        if (twitterLoginButton) {
+            twitterLoginButton.addEventListener('click', async () => {
+                // With Supabase, this will redirect to Twitter, so no need to handle result here
+                await module.signInWithTwitter();
+            });
+        }
+        
+        // Game over screen Twitter login button
+        const gameOverTwitterLoginButton = document.getElementById('gameOverTwitterLoginButton');
+        if (gameOverTwitterLoginButton) {
+            gameOverTwitterLoginButton.addEventListener('click', async () => {
+                // With Supabase, this will redirect to Twitter, so no need to handle result here
+                await module.signInWithTwitter();
+            });
+        }
+        
+        // Twitter logout button
+        const twitterLogoutButton = document.getElementById('twitterLogoutButton');
+        if (twitterLogoutButton) {
+            twitterLogoutButton.addEventListener('click', async () => {
+                const result = await module.signOutUser();
+                if (result.success) {
+                    // Re-enable the player name input
+                    const titlePlayerNameInput = document.getElementById('titlePlayerNameInput');
+                    if (titlePlayerNameInput) {
+                        titlePlayerNameInput.disabled = false;
+                    }
+                    
+                    // Hide Twitter profile display
+                    const twitterProfileElements = document.querySelectorAll('.twitter-profile');
+                    twitterProfileElements.forEach(element => {
+                        if (element) {
+                            element.style.display = 'none';
+                        }
+                    });
+                    
+                    // Show login buttons again
+                    const twitterLoginButtons = document.querySelectorAll('.social-login-button');
+                    twitterLoginButtons.forEach(button => {
+                        if (button) {
+                            button.style.display = 'flex';
+                        }
+                    });
+                }
+            });
+        }
+        
+        // Listen for Twitter login events
+        document.addEventListener('twitterLogin', (event) => {
+            const user = event.detail.user;
+            
+            // Hide login buttons
+            const twitterLoginButtons = document.querySelectorAll('.social-login-button');
+            twitterLoginButtons.forEach(button => {
+                if (button) {
+                    button.style.display = 'none';
+                }
+            });
+            
+            // Show Twitter profile
+            const twitterProfileElements = document.querySelectorAll('.twitter-profile');
+            twitterProfileElements.forEach(element => {
+                if (element) {
+                    element.style.display = 'flex';
+                    
+                    const profileImg = element.querySelector('.twitter-profile-img');
+                    if (profileImg && user.user_metadata?.avatar_url) {
+                        profileImg.src = user.user_metadata.avatar_url;
+                    }
+                    
+                    const profileName = element.querySelector('.twitter-profile-name');
+                    if (profileName && user.user_metadata?.full_name) {
+                        profileName.textContent = user.user_metadata.full_name;
+                    }
+                }
+            });
+        });
+        
+        // Listen for Twitter logout events
+        document.addEventListener('twitterLogout', () => {
+            // Re-enable the player name input
+            const titlePlayerNameInput = document.getElementById('titlePlayerNameInput');
+            if (titlePlayerNameInput) {
+                titlePlayerNameInput.disabled = false;
+            }
+            
+            // Hide Twitter profile display
+            const twitterProfileElements = document.querySelectorAll('.twitter-profile');
+            twitterProfileElements.forEach(element => {
+                if (element) {
+                    element.style.display = 'none';
+                }
+            });
+            
+            // Show login buttons again
+            const twitterLoginButtons = document.querySelectorAll('.social-login-button');
+            twitterLoginButtons.forEach(button => {
+                if (button) {
+                    button.style.display = 'flex';
+                }
+            });
+        });
+        
+        // Check for hash fragment from OAuth redirect
+        checkForAuthRedirect();
+    });
+}
+
+// Check for auth redirect from Twitter OAuth flow
+function checkForAuthRedirect() {
+    // Check if we have a code in the URL (from OAuth redirect)
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    
+    if (code) {
+        console.log("Auth code found in URL, exchanging for session...");
+        
+        // Import the supabase client and exchange the code
+        import('./leaderboard.js').then(async (module) => {
+            try {
+                const { supabase } = module;
+                const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+                
+                if (error) {
+                    console.error("Error exchanging code for session:", error);
+                } else {
+                    console.log("Successfully authenticated!");
+                    
+                    // Clean up the URL by removing the code parameter
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('code');
+                    window.history.replaceState({}, document.title, url.toString());
+                }
+            } catch (err) {
+                console.error("Exception during code exchange:", err);
+            }
+        });
+    }
+    
+    // Also check for hash fragment (might contain access_token for implicit flow)
+    if (window.location.hash && window.location.hash.includes('access_token')) {
+        console.log("Access token found in hash, setting session...");
+        
+        // Import the supabase client and set the session
+        import('./leaderboard.js').then(async (module) => {
+            try {
+                const { supabase } = module;
+                const hashParams = new URLSearchParams(window.location.hash.substring(1));
+                const accessToken = hashParams.get('access_token');
+                const refreshToken = hashParams.get('refresh_token') || '';
+                
+                if (accessToken) {
+                    const { data, error } = await supabase.auth.setSession({
+                        access_token: accessToken,
+                        refresh_token: refreshToken
+                    });
+                    
+                    if (error) {
+                        console.error("Error setting session from hash:", error);
+                    } else {
+                        console.log("Successfully set session from hash!");
+                        
+                        // Clean up the URL by removing the hash
+                        window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+                    }
+                }
+            } catch (err) {
+                console.error("Exception during hash session setup:", err);
+            }
+        });
+    }
+}
+
+// Initialize player name input with random name if needed
+function initPlayerNameInput() {
+    const titlePlayerNameInput = document.getElementById('titlePlayerNameInput');
+    if (!titlePlayerNameInput) return;
+    
+    // First check if user is logged in with Twitter
+    import('./twitter-auth.js').then(async twitterModule => {
+        // If user is logged in with Twitter, don't modify the input field
+        // as it will be handled by the Twitter auth module
+        if (twitterModule.isUserSignedIn()) {
+            console.log("User is logged in with Twitter, skipping random name generation");
+            return;
+        }
+        
+        // If not logged in with Twitter, proceed with normal initialization
+        import('./leaderboard.js').then(async module => {
+            const playerName = await module.getPlayerName();
+            
+            // If there's no stored name, generate a random one
+            if (!playerName) {
+                const randomUsername = generateRandomUsername();
+                titlePlayerNameInput.value = randomUsername;
+                titlePlayerNameInput.placeholder = "Random name generated";
+                
+                // Don't save it yet - only save when they start the game
+            } else {
+                // If there is a stored name, use it
+                titlePlayerNameInput.value = playerName;
+            }
+        }).catch(err => {
+            console.error('Error initializing player name input:', err);
+            // If there's an error, still try to generate a random name
+            const randomUsername = generateRandomUsername();
+            titlePlayerNameInput.value = randomUsername;
+            titlePlayerNameInput.placeholder = "Random name generated";
+        });
+    }).catch(err => {
+        console.error('Error checking Twitter login status:', err);
+        // Fall back to normal initialization if Twitter module fails to load
+        import('./leaderboard.js').then(async module => {
+            const playerName = await module.getPlayerName();
+            
+            // If there's no stored name, generate a random one
+            if (!playerName) {
+                const randomUsername = generateRandomUsername();
+                titlePlayerNameInput.value = randomUsername;
+                titlePlayerNameInput.placeholder = "Random name generated";
+            } else {
+                // If there is a stored name, use it
+                titlePlayerNameInput.value = playerName;
+            }
+        }).catch(err => {
+            console.error('Error initializing player name input:', err);
+            // If there's an error, still try to generate a random name
+            const randomUsername = generateRandomUsername();
+            titlePlayerNameInput.value = randomUsername;
+            titlePlayerNameInput.placeholder = "Random name generated";
+        });
+    });
 }
