@@ -382,8 +382,15 @@ document.addEventListener('keydown', (event) => {
             break;
         case 'Space':
             if (canJump) {
-                velocity.y = 5.0; // Jump velocity
-                canJump = false;
+                // Prevent jumping if holding a gatling gun
+                if (gameState.currentGunType === 'gatlingGun') {
+                    // Maybe play a sound or show a notification to indicate it's too heavy to jump
+                    showNotification("Too heavy to jump!");
+                    playSound('thud', 0.3);
+                } else {
+                    velocity.y = 5.0; // Jump velocity
+                    canJump = false;
+                }
             }
             break;
         case 'KeyR':
@@ -3297,15 +3304,15 @@ function animate() {
         if (isJoystickActive && isMobileDevice()) {
             // Smoother movement with joystick - use the actual values for variable speed
             // Use joystickIntensity to control movement speed based on how far the joystick is pushed
-            const speedMultiplier = 5.0 * joystickIntensity;
+            const speedMultiplier = 5.0 * joystickIntensity * gameState.movementSpeed;
             velocity.z = direction.z * speedMultiplier;
             velocity.x = direction.x * speedMultiplier;
         } else {
             // Keyboard movement (binary on/off)
-            if (moveForward || moveBackward) velocity.z = direction.z * 5.0;
+            if (moveForward || moveBackward) velocity.z = direction.z * 5.0 * gameState.movementSpeed;
             else velocity.z = 0;
             
-            if (moveLeft || moveRight) velocity.x = direction.x * 5.0;
+            if (moveLeft || moveRight) velocity.x = direction.x * 5.0 * gameState.movementSpeed;
             else velocity.x = 0;
         }
         
