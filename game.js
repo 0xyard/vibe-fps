@@ -6564,8 +6564,41 @@ function checkSoundsLoaded() {
 setTimeout(checkSoundsLoaded, 5000); // Check after 5 seconds
 
 // Add mobile device detection utility
-function isMobileDevice() {
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+function isMobileDevice() {    // Check if device is actually mobile
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+        (navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
+    
+    // Also check screen width for landscape tablet/mobile view
+    const isSmallScreen = window.innerWidth <= 1024;
+    
+    return isMobile || isSmallScreen;
+}
+
+// Add this new function to handle orientation changes
+function handleOrientationChange() {
+    const isLandscape = window.innerWidth > window.innerHeight;
+    debugLog('isLandscape: ' + isLandscape);
+    // Fix the ID to match what's used in initJoystick
+    const joystickContainer = document.getElementById('joystick-container');
+    const aimJoystickContainer = document.getElementById('aim-joystick-container');
+    
+    if (isMobileDevice()) {
+        debugLog('Mobile device detected');
+        // Always show controls on mobile devices regardless of orientation
+        if (joystickContainer) joystickContainer.style.display = 'block';
+        if (aimJoystickContainer) aimJoystickContainer.style.display = 'block';
+
+        // Adjust positions for landscape mode if needed
+        if (isLandscape) {
+            // You can adjust positions specifically for landscape if needed
+            if (joystickContainer) joystickContainer.style.bottom = '50px';
+            if (aimJoystickContainer) aimJoystickContainer.style.bottom = '50px';
+        }
+    } else {
+        // Hide controls on non-mobile devices
+        if (joystickContainer) joystickContainer.style.display = 'none';
+        if (aimJoystickContainer) aimJoystickContainer.style.display = 'none';
+    }
 }
 
 // Initialize and handle the virtual joystick
@@ -6725,6 +6758,13 @@ function initJoystick() {
             document.dispatchEvent(mouseEvent);
         }
     });
+
+    // Add orientation change detection
+    window.addEventListener('orientationchange', handleOrientationChange);
+    window.addEventListener('resize', handleOrientationChange);
+    
+    // Initial check
+    handleOrientationChange();
 }
 
 // Custom function to handle exiting pointer lock for both mobile and desktop
