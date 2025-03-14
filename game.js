@@ -5462,12 +5462,12 @@ function handleEnemyDefeat(enemy, position) {
         availableWeapons.push('gatlingGun');
     }
     
-    if (dropRoll < 0.05) {
-        // 5% chance to drop health
+    if (dropRoll < 0.03) {
+        // 3% chance to drop health
         healthPickups.push(createHealthPickup(position.clone()));
         debugLog('Enemy dropped health');
-    } else if (dropRoll < 0.99 && availableWeapons.length > 0) {
-        // 20% chance to drop a weapon (if there are available weapons)
+    } else if (dropRoll < 0.18 && availableWeapons.length > 0) {
+        // 15% chance to drop a weapon (if there are available weapons)
         const randomWeaponIndex = Math.floor(Math.random() * availableWeapons.length);
         const weaponToDrop = availableWeapons[randomWeaponIndex];
         
@@ -5498,7 +5498,7 @@ function handleEnemyDefeat(enemy, position) {
                 break;
         }
     } else {
-        // 75% chance to drop nothing
+        // 80% chance to drop nothing
         debugLog('Enemy dropped nothing');
     }
     
