@@ -1761,8 +1761,18 @@ function reload() {
     // Play reload sound
     playSound('reload');
     
-    // Reload time depends on gun type
-    const reloadTime = gameState.currentGunType === 'pistol' ? 1000 : 2000;
+    // Determine reload time based on weapon type
+    let reloadTime = 2000; // Default reload time (2 seconds)
+
+    if (gameState.currentGunType === 'pistol') {
+        reloadTime = 1000; 
+    } else if (gameState.currentGunType === 'gatlingGun') {
+        reloadTime = 5000; // Much slower reload for gatling gun (5 seconds)
+    } else if (gameState.currentGunType === 'sniperRifle') {
+        reloadTime = 3000; // Sniper takes longer to reload (3 seconds)
+    } else if (gameState.currentGunType === 'shotgun') {
+        reloadTime = 2500; // Shotgun takes a bit longer (2.5 seconds)
+    }
     
     // Animation for reloading - set rotation for all weapons and keep until reload is complete
     switch (gameState.currentGunType) {
