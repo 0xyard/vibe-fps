@@ -17,16 +17,17 @@ const pistolPickups = [];
 const sniperRiflePickups = [];
 const healthPickups = [];
 const shotgunPickups = [];
-const rocketLauncherPickups = []; // Add rocket launcher pickups array
-const fireballs = []; // Array to store active fireballs
+const rocketLauncherPickups = [];
+const gatlingGunPickups = []; // Add Gatling gun pickups array
+const fireballs = [];
 
 // Game state
 const gameState = {
     health: 100,
     maxHealth: 100,
-    ammo: 30,
-    maxAmmo: 30,
-    bullets: 30,
+    ammo: 10,
+    maxAmmo: 10,
+    // bullets: 30,
     score: 0,
     level: 1,
     gameOver: false,
@@ -45,11 +46,15 @@ const gameState = {
     foundSniperRifle: false,
     foundShotgun: false,
     foundRocketLauncher: false,
+    foundGatlingGun: false, // Add Gatling gun flag
     gameStarted: false,
     menuOpen: false,
-    soundEnabled: true, // Initialize sound to be enabled by default
-    clickedGameOverButton: false, // Flag to track if a game over button was clicked
-    vibrationEnabled: true // Added vibration setting
+    soundEnabled: true,
+    clickedGameOverButton: false,
+    vibrationEnabled: true,
+    gatlingGunSpinning: false, // Add Gatling gun spinning state
+    gatlingGunSpinSpeed: 0, // Add Gatling gun spin speed
+    movementSpeed: 1.0 // Base movement speed multiplier
 };
 
 // DOM elements
@@ -129,6 +134,7 @@ let machineGun;
 let sniperRifle;
 let shotgun;
 let rocketLauncher; // Add rocket launcher variable
+let gatlingGun; // Add Gatling gun variable
 
 scene.add(camera);
 
@@ -376,8 +382,15 @@ document.addEventListener('keydown', (event) => {
             break;
         case 'Space':
             if (canJump) {
-                velocity.y = 5.0; // Jump velocity
-                canJump = false;
+                // Prevent jumping if holding a gatling gun
+                if (gameState.currentGunType === 'gatlingGun') {
+                    // Maybe play a sound or show a notification to indicate it's too heavy to jump
+                    showNotification("Too heavy to jump!");
+                    playSound('thud', 0.3);
+                } else {
+                    velocity.y = 5.0; // Jump velocity
+                    canJump = false;
+                }
             }
             break;
         case 'KeyR':
@@ -1083,6 +1096,8 @@ function shoot() {
         playSound('shotgunBlast');
     } else if (gameState.currentGunType === 'rocketLauncher') {
         playSound('rocketLaunch');
+    } else if (gameState.currentGunType === 'gatlingGun') {
+        playSound('shoot', 0.7);
     } else {
         playSound('shoot');
     }
@@ -1118,6 +1133,9 @@ function shoot() {
         } else if (gameState.currentGunType === 'rocketLauncher') {
             bulletStartPosition = new THREE.Vector3(0, 0, 0);
             rocketLauncher.localToWorld(bulletStartPosition);
+        } else if (gameState.currentGunType === 'gatlingGun') {
+            bulletStartPosition = new THREE.Vector3(1, 0, 0);
+            gatlingGun.localToWorld(bulletStartPosition);
         }
     }
     
@@ -1186,6 +1204,25 @@ function shoot() {
         // Add to projectiles array
         bulletProjectiles.push(projectile);
         return;
+    } else if (gameState.currentGunType === 'gatlingGun') {
+        // Create bullet projectile with slight spread for gatling gun
+        const spreadDirection = shootDirection.clone();
+        
+        // Add random spread (more than machine gun but less than shotgun)
+        spreadDirection.x += (Math.random() - 0.5) * 0.06;
+        spreadDirection.y += (Math.random() - 0.5) * 0.06;
+        
+        // Normalize to maintain consistent speed
+        spreadDirection.normalize();
+        
+        // Create bullet projectile
+        projectile = createBulletProjectile(bulletStartPosition, spreadDirection);
+        
+        // Gatling gun bullets do moderate damage but fire rapidly
+        projectile.damage = 35;
+        
+        // Create muzzle flash
+        createMuzzleFlash(bulletStartPosition);
     } else {
         // Create bullet projectile
         projectile = createBulletProjectile(bulletStartPosition, shootDirection);
@@ -1486,6 +1523,7 @@ function interactWithPickups() {
                 sniperRifle.visible = pickupType === 'sniperRifle';
                 shotgun.visible = pickupType === 'shotgun';
                 rocketLauncher.visible = pickupType === 'rocketLauncher';
+                gatlingGun.visible = pickupType === 'gatlingGun';
                 
                 // Reset zoom if coming from sniper rifle
                 if (gameState.isZoomed) {
@@ -1517,6 +1555,7 @@ function interactWithPickups() {
     if (handleWeaponPickup(sniperRiflePickups, 'sniperRifle', 5, 'Sniper Rifle')) return;
     if (handleWeaponPickup(shotgunPickups, 'shotgun', 8, 'Shotgun')) return;
     if (handleWeaponPickup(rocketLauncherPickups, 'rocketLauncher', 5, 'Rocket Launcher')) return;
+    if (handleWeaponPickup(gatlingGunPickups, 'gatlingGun', 200, 'Gatling Gun')) return;
     if (handleWeaponPickup(pistolPickups, 'pistol', 10, 'Pistol')) return;
 }
 
@@ -1565,6 +1604,7 @@ function restartGame() {
     gameState.foundSniperRifle = false;
     gameState.foundShotgun = false;
     gameState.foundRocketLauncher = false;
+    gameState.foundGatlingGun = false; // Reset Gatling gun flag
     gameState.menuOpen = false; // Reset menu state
     gameState.clickedGameOverButton = false; // Reset button click flag
     
@@ -1584,6 +1624,7 @@ function restartGame() {
     sniperRifle.visible = false;
     shotgun.visible = false;
     rocketLauncher.visible = false;
+    gatlingGun.visible = false;
     
     // Reset enemy arrays
     for (const enemy of enemies) {
@@ -1727,8 +1768,18 @@ function reload() {
     // Play reload sound
     playSound('reload');
     
-    // Reload time depends on gun type
-    const reloadTime = gameState.currentGunType === 'pistol' ? 1000 : 2000;
+    // Determine reload time based on weapon type
+    let reloadTime = 2000; // Default reload time (2 seconds)
+
+    if (gameState.currentGunType === 'pistol') {
+        reloadTime = 1000; 
+    } else if (gameState.currentGunType === 'gatlingGun') {
+        reloadTime = 5000; // Much slower reload for gatling gun (5 seconds)
+    } else if (gameState.currentGunType === 'sniperRifle') {
+        reloadTime = 3000; // Sniper takes longer to reload (3 seconds)
+    } else if (gameState.currentGunType === 'shotgun') {
+        reloadTime = 2500; // Shotgun takes a bit longer (2.5 seconds)
+    }
     
     // Animation for reloading - set rotation for all weapons and keep until reload is complete
     switch (gameState.currentGunType) {
@@ -1746,6 +1797,9 @@ function reload() {
             break;
         case 'rocketLauncher':
             rocketLauncher.rotation.x = 0.5;
+            break;
+        case 'gatlingGun':
+            gatlingGun.rotation.x = 0.5;
             break;
     }
     
@@ -1770,6 +1824,9 @@ function reload() {
                 break;
             case 'rocketLauncher':
                 rocketLauncher.rotation.x = 0;
+                break;
+            case 'gatlingGun':
+                gatlingGun.rotation.x = 0;
                 break;
         }
         
@@ -1961,11 +2018,13 @@ function init() {
     sniperRifle = createSniperRifle();
     shotgun = createShotgun();
     rocketLauncher = createRocketLauncher();
+    gatlingGun = createGatlingGun();
     camera.add(weapon);
     camera.add(machineGun);
     camera.add(sniperRifle);
     camera.add(shotgun);
     camera.add(rocketLauncher);
+    camera.add(gatlingGun);
     
     // Set up menu button event listeners
     document.getElementById('resumeButton').addEventListener('click', toggleMenu);
@@ -2648,7 +2707,7 @@ function spawnEnemy(type) {
             break;
         case 'cyclops':
             baseSpeed = 0.015; // Cyclops are slow but powerful
-            health = 500; // Cyclops have high health
+            health = 2000; // Cyclops have high health
             bounceAmount = 0.03; // Cyclops barely bounce
             flyHeight = 0; // Cyclops don't fly
             break;
@@ -3079,7 +3138,37 @@ function animate() {
         
         // Update bullet projectiles
         updateBulletProjectiles(delta);
-        
+
+        // Update Gatling gun barrel rotation
+        if (gameState.currentGunType === 'gatlingGun' && gatlingGun) {
+            const barrelAssembly = gatlingGun.userData.barrelAssembly;
+            if (barrelAssembly) {
+                if (gameState.isMouseDown && gameState.ammo > 0 && !gameState.isReloading) {
+                    // Spin up the barrels
+                    gameState.gatlingGunSpinSpeed = Math.min(
+                        gameState.gatlingGunSpinSpeed + delta * 4,
+                        gatlingGun.userData.maxSpinSpeed
+                    );
+                } else {
+                    // Spin down the barrels
+                    gameState.gatlingGunSpinSpeed = Math.max(
+                        gameState.gatlingGunSpinSpeed - delta * 2,
+                        0
+                    );
+                }
+                
+                // Apply rotation
+                barrelAssembly.rotation.x += gameState.gatlingGunSpinSpeed;
+            }
+        }
+
+        // Adjust movement speed based on weapon type
+        if (gameState.currentGunType === 'gatlingGun') {
+            gameState.movementSpeed = 0.6; // 40% movement penalty with Gatling gun
+        } else {
+            gameState.movementSpeed = 1.0; // Normal movement speed with other weapons
+        }
+
         // Update fireballs
         for (let i = fireballs.length - 1; i >= 0; i--) {
             const fireball = fireballs[i];
@@ -3155,6 +3244,8 @@ function animate() {
             // Set fire rate based on weapon type
             if (gameState.currentGunType === 'machineGun') {
                 fireRate = 100; // Fast fire rate for machine gun
+            } else if (gameState.currentGunType === 'gatlingGun') {
+                fireRate = 40; // Very fast fire rate for gatling gun (faster than machine gun)
             } else if (isMobileDevice()) {
                 // On mobile, enable continuous firing for all weapons with appropriate rates
                 switch (gameState.currentGunType) {
@@ -3213,15 +3304,15 @@ function animate() {
         if (isJoystickActive && isMobileDevice()) {
             // Smoother movement with joystick - use the actual values for variable speed
             // Use joystickIntensity to control movement speed based on how far the joystick is pushed
-            const speedMultiplier = 5.0 * joystickIntensity;
+            const speedMultiplier = 5.0 * joystickIntensity * gameState.movementSpeed;
             velocity.z = direction.z * speedMultiplier;
             velocity.x = direction.x * speedMultiplier;
         } else {
             // Keyboard movement (binary on/off)
-            if (moveForward || moveBackward) velocity.z = direction.z * 5.0;
+            if (moveForward || moveBackward) velocity.z = direction.z * 5.0 * gameState.movementSpeed;
             else velocity.z = 0;
             
-            if (moveLeft || moveRight) velocity.x = direction.x * 5.0;
+            if (moveLeft || moveRight) velocity.x = direction.x * 5.0 * gameState.movementSpeed;
             else velocity.x = 0;
         }
         
@@ -4230,6 +4321,9 @@ function showPickupHint(gunType) {
         case 'rocketLauncher':
             gunName = "Rocket Launcher";
             break;
+        case 'gatlingGun':
+            gunName = "Gatling Gun";
+            break;
         default: gunName = "Unknown Weapon";
     }
     
@@ -4326,6 +4420,19 @@ function checkForNearbyPickups() {
             if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
                 nearestDistance = distance;
                 nearestPickupType = 'rocketLauncher';
+                foundNearbyPickup = true;
+            }
+        }
+    }
+    
+    // Check for gatling gun pickups
+    if (gameState.currentGunType !== 'gatlingGun') {
+        for (const pickup of gatlingGunPickups) {
+            const distance = playerPosition.distanceTo(pickup.mesh.position);
+            
+            if (distance < 3 && distance < nearestDistance) { // Show hint within 3 units
+                nearestDistance = distance;
+                nearestPickupType = 'gatlingGun';
                 foundNearbyPickup = true;
             }
         }
@@ -4484,6 +4591,40 @@ function checkForExpiredPickups(currentTime) {
             pickup.isActive = false;
             scene.remove(pickup.mesh);
             shotgunPickups.splice(i, 1);
+        } else if (age > WEAPON_TIMEOUT - FADE_START) {
+            // Fade out pickup
+            const opacity = 1 - ((age - (WEAPON_TIMEOUT - FADE_START)) / FADE_START);
+            fadePickupMesh(pickup.mesh, opacity);
+        }
+    }
+    
+    // Check for expired rocket launcher pickups
+    for (let i = rocketLauncherPickups.length - 1; i >= 0; i--) {
+        const pickup = rocketLauncherPickups[i];
+        const age = currentTime - pickup.timeCreated;
+        
+        if (age > WEAPON_TIMEOUT) {
+            // Remove pickup
+            pickup.isActive = false;
+            scene.remove(pickup.mesh);
+            rocketLauncherPickups.splice(i, 1);
+        } else if (age > WEAPON_TIMEOUT - FADE_START) {
+            // Fade out pickup
+            const opacity = 1 - ((age - (WEAPON_TIMEOUT - FADE_START)) / FADE_START);
+            fadePickupMesh(pickup.mesh, opacity);
+        }
+    }
+    
+    // Check for expired gatling gun pickups
+    for (let i = gatlingGunPickups.length - 1; i >= 0; i--) {
+        const pickup = gatlingGunPickups[i];
+        const age = currentTime - pickup.timeCreated;
+        
+        if (age > WEAPON_TIMEOUT) {
+            // Remove pickup
+            pickup.isActive = false;
+            scene.remove(pickup.mesh);
+            gatlingGunPickups.splice(i, 1);
         } else if (age > WEAPON_TIMEOUT - FADE_START) {
             // Fade out pickup
             const opacity = 1 - ((age - (WEAPON_TIMEOUT - FADE_START)) / FADE_START);
@@ -5317,12 +5458,16 @@ function handleEnemyDefeat(enemy, position) {
         availableWeapons.push('pistol');
     }
     
-    if (dropRoll < 0.05) {
-        // 5% chance to drop health
+    if (gameState.currentGunType !== 'gatlingGun') {
+        availableWeapons.push('gatlingGun');
+    }
+    
+    if (dropRoll < 0.03) {
+        // 3% chance to drop health
         healthPickups.push(createHealthPickup(position.clone()));
         debugLog('Enemy dropped health');
-    } else if (dropRoll < 0.25 && availableWeapons.length > 0) {
-        // 20% chance to drop a weapon (if there are available weapons)
+    } else if (dropRoll < 0.18 && availableWeapons.length > 0) {
+        // 15% chance to drop a weapon (if there are available weapons)
         const randomWeaponIndex = Math.floor(Math.random() * availableWeapons.length);
         const weaponToDrop = availableWeapons[randomWeaponIndex];
         
@@ -5347,9 +5492,13 @@ function handleEnemyDefeat(enemy, position) {
                 pistolPickups.push(createPistolPickup(position.clone()));
                 debugLog('Enemy dropped pistol');
                 break;
+            case 'gatlingGun':
+                gatlingGunPickups.push(createGatlingGunPickup(position.clone()));
+                debugLog('Enemy dropped gatling gun');
+                break;
         }
     } else {
-        // 75% chance to drop nothing
+        // 80% chance to drop nothing
         debugLog('Enemy dropped nothing');
     }
     
@@ -5452,6 +5601,7 @@ function updateMenuStats() {
         case 'sniperRifle': weaponName = "Sniper Rifle"; break;
         case 'shotgun': weaponName = "Shotgun"; break;
         case 'rocketLauncher': weaponName = "Rocket Launcher"; break;
+        case 'gatlingGun': weaponName = "Gatling Gun"; break;
         default: weaponName = "Unknown Weapon";
     }
     
@@ -6389,7 +6539,7 @@ function checkSoundsLoaded() {
     
     for (const sound in soundEffects) {
         totalCount++;
-        if (soundEffects[sound].buffer) {
+        if (soundEffects[sound].bulletffer) {
             loadedCount++;
         }
     }
@@ -6682,4 +6832,153 @@ function reduceShadowQualityForMobile() {
         dirLight.shadow.mapSize.width = 1024;  // Reduced from 2048
         dirLight.shadow.mapSize.height = 1024; // Reduced from 2048
     }
+}
+
+// Create a Gatling gun model
+function createGatlingGunModel() {
+    const modelGroup = new THREE.Group();
+
+    // Main body
+    const bodyGeometry = new THREE.CylinderGeometry(0.15, 0.15, 0.8, 12);
+    const bodyMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x444444,
+        metalness: 0.7,
+        roughness: 0.3
+    });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    body.rotation.z = Math.PI / 2;
+    modelGroup.add(body);
+
+    // Rotating barrel assembly - FIXED VERSION
+    const barrelAssembly = new THREE.Group();
+    const barrelCount = 6;
+    const barrelRadius = 0.08; // Distance from center
+    
+    for (let i = 0; i < barrelCount; i++) {
+        const barrelGeometry = new THREE.CylinderGeometry(0.03, 0.03, 1.2, 8);
+        const barrelMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x333333,
+            metalness: 0.8,
+            roughness: 0.2
+        });
+        const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
+        
+        // Position barrels in a circle around the center
+        const angle = (i / barrelCount) * Math.PI * 2;
+        
+        // Rotate each barrel to point outward from the center
+        barrel.rotation.z = Math.PI/2;
+        
+        // Position at the correct angle around the circle
+        barrel.position.y = Math.sin(angle) * barrelRadius;
+        barrel.position.z = Math.cos(angle) * barrelRadius;
+        
+        barrelAssembly.add(barrel);
+    }
+    
+    // Rotate the entire assembly so barrels are pointing forward
+    barrelAssembly.position.x = 0.4; // Position in front of body
+    modelGroup.add(barrelAssembly);
+
+    // Add front housing
+    const frontHousingGeometry = new THREE.CylinderGeometry(0.2, 0.2, 0.1, 12);
+    const frontHousingMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x555555,
+        metalness: 0.6,
+        roughness: 0.4
+    });
+    const frontHousing = new THREE.Mesh(frontHousingGeometry, frontHousingMaterial);
+    frontHousing.rotation.z = Math.PI / 2;
+    frontHousing.position.x = 0.8;
+    modelGroup.add(frontHousing);
+
+    // Add ammo belt container
+    const beltContainerGeometry = new THREE.BoxGeometry(0.3, 0.4, 0.2);
+    const beltContainerMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x666666,
+        metalness: 0.5,
+        roughness: 0.5
+    });
+    const beltContainer = new THREE.Mesh(beltContainerGeometry, beltContainerMaterial);
+    beltContainer.position.set(-0.2, -0.3, 0);
+    modelGroup.add(beltContainer);
+
+    // Add handles
+    const handleGeometry = new THREE.CylinderGeometry(0.03, 0.03, 0.2, 8);
+    const handleMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x222222,
+        metalness: 0.3,
+        roughness: 0.7
+    });
+    
+    const frontHandle = new THREE.Mesh(handleGeometry, handleMaterial);
+    frontHandle.rotation.x = Math.PI / 2;
+    frontHandle.position.set(0.3, -0.2, 0);
+    modelGroup.add(frontHandle);
+
+    const rearHandle = new THREE.Mesh(handleGeometry, handleMaterial);
+    rearHandle.rotation.x = Math.PI / 2;
+    rearHandle.position.set(-0.2, -0.2, 0);
+    modelGroup.add(rearHandle);
+
+    // Store the barrel assembly for rotation animation
+    modelGroup.userData.barrelAssembly = barrelAssembly;
+    modelGroup.userData.isSpinning = false;
+    modelGroup.userData.spinSpeed = 0;
+    modelGroup.userData.maxSpinSpeed = 2; // Maximum rotation speed
+
+    return modelGroup;
+}
+
+// Create the Gatling gun weapon for player use
+function createGatlingGun() {
+    const weaponGroup = createGatlingGunModel();
+    
+    // Position for player view
+    weaponGroup.position.set(0.3, -0.3, 0);
+    weaponGroup.rotation.y = Math.PI / 2;
+    weaponGroup.visible = false; // Hide initially
+    
+    return weaponGroup;
+}
+
+// Create a Gatling gun pickup
+function createGatlingGunPickup(position) {
+    const gunGroup = createGatlingGunModel();
+    
+    // Set position
+    gunGroup.position.copy(position);
+    gunGroup.position.y = 0.5; // Slightly above ground
+    
+    // Add floating animation
+    const floatAnimation = () => {
+        if (!pickup.isActive) return; // Stop animation if pickup is no longer active
+        
+        const time = performance.now() * 0.001; // Convert to seconds
+        gunGroup.position.y = position.y + Math.sin(time * 2) * 0.1; // Float up and down
+        gunGroup.rotation.y += 0.01; // Slowly rotate
+        
+        // Spin barrels slowly for pickup effect
+        if (gunGroup.userData.barrelAssembly) {
+            gunGroup.userData.barrelAssembly.rotation.x += 0.02;
+        }
+        
+        requestAnimationFrame(floatAnimation);
+    };
+    
+    // Create pickup object
+    const pickup = {
+        mesh: gunGroup,
+        type: 'gatlingGun',
+        isActive: true,
+        timeCreated: performance.now()
+    };
+    
+    // Add to scene
+    scene.add(gunGroup);
+    
+    // Start animation
+    floatAnimation();
+    
+    return pickup;
 }
