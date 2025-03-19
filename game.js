@@ -54,7 +54,15 @@ const gameState = {
     vibrationEnabled: true,
     gatlingGunSpinning: false, // Add Gatling gun spinning state
     gatlingGunSpinSpeed: 0, // Add Gatling gun spin speed
-    movementSpeed: 1.0 // Base movement speed multiplier
+    movementSpeed: 1.0, // Base movement speed multiplier
+    weaponStats: {
+        pistol: 0,
+        machineGun: 0,
+        sniperRifle: 0,
+        shotgun: 0,
+        rocketLauncher: 0,
+        gatlingGun: 0
+    }
 };
 
 // DOM elements
@@ -1086,6 +1094,9 @@ function shoot() {
     
     // Decrease ammo
     gameState.ammo--;
+    
+    // Increment the weapon stats counter for current gun type
+    gameState.weaponStats[gameState.currentGunType]++;
     
     updateUI();
     
@@ -2870,6 +2881,24 @@ function createPistolPickup(position) {
 }
 
 // Check if game is over
+
+// Function to get the most used gun
+function getMostUsedGun() {
+    // Find the gun with the highest count
+    let mostUsedGun = 'Unknown';
+    let highestCount = 0;
+    
+    for (const [gunType, count] of Object.entries(gameState.weaponStats)) {
+        if (count > highestCount) {
+            highestCount = count;
+            mostUsedGun = gunType;
+        }
+    }
+    
+    // If no guns were used, return Unknown
+    return highestCount > 0 ? mostUsedGun : 'Unknown';
+}
+
 function checkGameOver() {
     if (gameState.health <= 0 && !gameState.gameOver) {
         gameState.gameOver = true;
@@ -2903,7 +2932,7 @@ function checkGameOver() {
                 }
                 
                 // Submit the score
-                module.submitScore(playerName, score, wave).then(result => {
+                module.submitScore(playerName, score, wave, getMostUsedGun()).then(result => {
                     if (result.success) {
                         if (statusElement) {
                             statusElement.textContent = 'Score submitted successfully!';
@@ -3052,7 +3081,7 @@ function checkGameOver() {
                 }
                 
                 // Submit the score
-                module.submitScore(playerName, score, wave).then(result => {
+                module.submitScore(playerName, score, wave, getMostUsedGun()).then(result => {
                     if (result.success) {
                         if (statusElement) {
                             statusElement.textContent = 'Score submitted successfully! Redirecting to leaderboard...';
@@ -5097,6 +5126,11 @@ function createRocketLauncherPickup(position) {
         const time = performance.now() * 0.001; // Convert to seconds
         gunGroup.position.y = position.y + Math.sin(time * 2) * 0.1; // Float up and down
         gunGroup.rotation.y += 0.01; // Slowly rotate
+        
+        // Spin barrels slowly for pickup effect
+        if (gunGroup.userData.barrelAssembly) {
+            gunGroup.userData.barrelAssembly.rotation.x += 0.02;
+        }
         
         requestAnimationFrame(floatAnimation);
     };

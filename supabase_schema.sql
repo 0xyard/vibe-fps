@@ -56,3 +56,6 @@ BEGIN
     LIMIT limit_count;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER; 
+
+-- Add a gun column to the leaderboard table
+ALTER TABLE leaderboard ADD COLUMN IF NOT EXISTS gun TEXT DEFAULT 'Unknown';
