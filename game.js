@@ -777,6 +777,42 @@ function createRandomBlocks(count = 15) {
         scene.add(block);
         collisionObjects.push(block);
         
+        // For blocks that are short enough to jump on (less than 4 units high)
+        // Add invisible collision walls that extend higher
+        if (height < 4) {
+            // Create invisible collision walls that extend up to prevent jumping in
+            const wallHeight = 8; // Height that player definitely can't jump over
+            const wallMaterial = new THREE.MeshBasicMaterial({ 
+                visible: false // Make the walls invisible
+            });
+            
+            // Create collision walls for each side of the block
+            const wallGeometries = [
+                new THREE.BoxGeometry(0.1, wallHeight, depth), // Left wall
+                new THREE.BoxGeometry(0.1, wallHeight, depth), // Right wall
+                new THREE.BoxGeometry(width, wallHeight, 0.1), // Front wall
+                new THREE.BoxGeometry(width, wallHeight, 0.1)  // Back wall
+            ];
+            
+            const wallPositions = [
+                [-width/2, wallHeight/2, 0], // Left wall
+                [width/2, wallHeight/2, 0],  // Right wall
+                [0, wallHeight/2, -depth/2], // Front wall
+                [0, wallHeight/2, depth/2]   // Back wall
+            ];
+            
+            wallGeometries.forEach((geometry, index) => {
+                const wall = new THREE.Mesh(geometry, wallMaterial);
+                wall.position.set(
+                    position.x + wallPositions[index][0],
+                    wallPositions[index][1],
+                    position.z + wallPositions[index][2]
+                );
+                scene.add(wall);
+                collisionObjects.push(wall);
+            });
+        }
+        
         // Store bounds for enemy spawn checking
         blockBounds.push({
             x: position.x,
