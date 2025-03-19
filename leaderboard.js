@@ -18,7 +18,7 @@ export function savePlayerName(name) {
 }
 
 // Submit score to Supabase
-export async function submitScore(playerName, score, wave) {
+export async function submitScore(playerName, score, wave, gun) {
     try {
         // Validate inputs
         if (!playerName || playerName.trim() === '') {
@@ -42,7 +42,8 @@ export async function submitScore(playerName, score, wave) {
                 { 
                     player_name: sanitizedName,
                     score: Math.floor(score),
-                    wave: Math.floor(wave)
+                    wave: Math.floor(wave),
+                    gun: gun || 'Unknown'
                 }
             ]);
         
