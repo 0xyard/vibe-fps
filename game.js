@@ -2969,38 +2969,44 @@ function setupMobileOptimizations() {
     
     // Add touch event for aiming (but not shooting)
     document.addEventListener('touchstart', function(e) {
-        // Don't process if touching joystick area, shoot button or UI elements
-        const joystickArea = document.getElementById('joystick-container');
-        const shootArea = document.getElementById('shoot-button');
-        const joystickRect = joystickArea.getBoundingClientRect();
-        const shootRect = shootArea.getBoundingClientRect();
-        
-        // Check if touch is in joystick or shoot button area
-        for (let i = 0; i < e.touches.length; i++) {
-            const touch = e.touches[i];
-            if ((touch.clientX >= joystickRect.left && 
-                touch.clientX <= joystickRect.right && 
-                touch.clientY >= joystickRect.top && 
-                touch.clientY <= joystickRect.bottom) ||
-               (touch.clientX >= shootRect.left && 
-                touch.clientX <= shootRect.right && 
-                touch.clientY >= shootRect.top && 
-                touch.clientY <= shootRect.bottom)) {
-                return; // Don't start aiming if touching control areas
-            }
-        }
+        // Track the touch identifier for aiming
+        let aimTouchId = null;
         
         // Don't process if game is paused or over
         if (gameState.menuOpen || gameState.gameOver || !controls.isLocked) return;
         
-        // Start aiming (but not shooting)
-        isTouchAiming = true;
-        
-        // Store the initial touch position for aiming
-        if (e.touches.length > 0) {
-            const touch = e.touches[0];
-            lastTouchX = touch.clientX;
-            lastTouchY = touch.clientY;
+        // Check all touches to find one that's not on a control
+        for (let i = 0; i < e.touches.length; i++) {
+            const touch = e.touches[i];
+            
+            // Get joystick and shoot button areas
+            const joystickArea = document.getElementById('joystick-container');
+            const shootArea = document.getElementById('shoot-button');
+            const joystickRect = joystickArea.getBoundingClientRect();
+            const shootRect = shootArea.getBoundingClientRect();
+            
+            // Check if this touch is NOT in joystick or shoot button area
+            const touchingJoystick = (touch.clientX >= joystickRect.left && 
+                                      touch.clientX <= joystickRect.right && 
+                                      touch.clientY >= joystickRect.top && 
+                                      touch.clientY <= joystickRect.bottom);
+                                      
+            const touchingShoot = (touch.clientX >= shootRect.left && 
+                                   touch.clientX <= shootRect.right && 
+                                   touch.clientY >= shootRect.top && 
+                                   touch.clientY <= shootRect.bottom);
+            
+            // If touch is not on a control, use it for aiming
+            if (!touchingJoystick && !touchingShoot) {
+                // Start aiming with this touch
+                isTouchAiming = true;
+                aimTouchId = touch.identifier;
+                
+                // Store the initial touch position for aiming
+                lastTouchX = touch.clientX;
+                lastTouchY = touch.clientY;
+                break;
+            }
         }
         
         // // ADDED: Also trigger shooting when tapping outside control areas
@@ -3014,43 +3020,96 @@ function setupMobileOptimizations() {
     });
     
     document.addEventListener('touchmove', function(e) {
-        // Don't process if not aiming or game is paused/over
-        if (!isTouchAiming || gameState.menuOpen || gameState.gameOver || !controls.isLocked) return;
+        // Don't process if game is paused/over
+        if (gameState.menuOpen || gameState.gameOver || !controls.isLocked) return;
         
-        // Get current touch position
-        if (e.touches.length > 0) {
-            const touch = e.touches[0];
-            
-            // Calculate movement delta
-            const deltaX = touch.clientX - lastTouchX;
-            const deltaY = touch.clientY - lastTouchY;
-            
-            // Store new position
-            lastTouchX = touch.clientX;
-            lastTouchY = touch.clientY;
-            
-            // Apply movement to camera
-            if (Math.abs(deltaX) > 0 || Math.abs(deltaY) > 0) {
-                // Create and dispatch a synthetic mouse event for camera rotation
-                const mouseEvent = new MouseEvent('mousemove', {
-                    bubbles: true,
-                    cancelable: true,
-                    view: window,
-                    movementX: deltaX * touchSensitivity,
-                    movementY: deltaY * touchSensitivity
-                });
+        // Handle aiming for all touches that aren't on joystick
+        if (isTouchAiming) {
+            // Find the touch being used for aiming
+            for (let i = 0; i < e.touches.length; i++) {
+                const touch = e.touches[i];
                 
-                document.dispatchEvent(mouseEvent);
+                // Skip touches that are likely being used for joystick/shoot
+                const joystickArea = document.getElementById('joystick-container');
+                const shootArea = document.getElementById('shoot-button');
+                const joystickRect = joystickArea.getBoundingClientRect();
+                const shootRect = shootArea.getBoundingClientRect();
+                
+                const touchingJoystick = (touch.clientX >= joystickRect.left && 
+                                          touch.clientX <= joystickRect.right && 
+                                          touch.clientY >= joystickRect.top && 
+                                          touch.clientY <= joystickRect.bottom);
+                                          
+                const touchingShoot = (touch.clientX >= shootRect.left && 
+                                       touch.clientX <= shootRect.right && 
+                                       touch.clientY >= shootRect.top && 
+                                       touch.clientY <= shootRect.bottom);
+                
+                if (!touchingJoystick && !touchingShoot) {
+                    // Calculate movement delta
+                    const deltaX = touch.clientX - lastTouchX;
+                    const deltaY = touch.clientY - lastTouchY;
+                    
+                    // Store new position
+                    lastTouchX = touch.clientX;
+                    lastTouchY = touch.clientY;
+                    
+                    // Apply movement to camera
+                    if (Math.abs(deltaX) > 0 || Math.abs(deltaY) > 0) {
+                        // Create and dispatch a synthetic mouse event for camera rotation
+                        const mouseEvent = new MouseEvent('mousemove', {
+                            bubbles: true,
+                            cancelable: true,
+                            view: window,
+                            movementX: deltaX * touchSensitivity,
+                            movementY: deltaY * touchSensitivity
+                        });
+                        
+                        document.dispatchEvent(mouseEvent);
+                    }
+                    break;
+                }
             }
         }
     });
     
     document.addEventListener('touchend', function(e) {
-        // If no touches left, stop aiming
-        if (e.touches.length === 0) {
-            isTouchAiming = false;
+        // Check if all non-control touches are gone
+        let hasNonControlTouch = false;
+        
+        for (let i = 0; i < e.touches.length; i++) {
+            const touch = e.touches[i];
             
-            // ADDED: Also stop shooting when touch ends
+            // Get control areas
+            const joystickArea = document.getElementById('joystick-container');
+            const shootArea = document.getElementById('shoot-button');
+            const joystickRect = joystickArea.getBoundingClientRect();
+            const shootRect = shootArea.getBoundingClientRect();
+            
+            const touchingJoystick = (touch.clientX >= joystickRect.left && 
+                                      touch.clientX <= joystickRect.right && 
+                                      touch.clientY >= joystickRect.top && 
+                                      touch.clientY <= joystickRect.bottom);
+                                      
+            const touchingShoot = (touch.clientX >= shootRect.left && 
+                                   touch.clientX <= shootRect.right && 
+                                   touch.clientY >= shootRect.top && 
+                                   touch.clientY <= shootRect.bottom);
+            
+            // If we found a touch that's not on a control, we're still aiming
+            if (!touchingJoystick && !touchingShoot) {
+                hasNonControlTouch = true;
+                break;
+            }
+        }
+        
+        // If no non-control touches left, stop aiming
+        if (!hasNonControlTouch) {
+            isTouchAiming = false;
+        }
+        
+        // If no touches left at all, stop shooting too
+        if (e.touches.length === 0) {
             gameState.isMouseDown = false;
         }
     });
