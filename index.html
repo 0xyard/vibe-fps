@@ -290,7 +290,7 @@
             }
         }
         #menuScreen {
-            position: absolute;
+            position: fixed;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
@@ -301,8 +301,9 @@
             max-width: 500px;
             max-height: 90vh;
             overflow-y: auto;
-            display: none;
+            opacity: 0;
             pointer-events: auto;
+            transition: opacity 0.2s ease;
             text-align: center;
             color: black;
             border-radius: 10px;
@@ -332,6 +333,9 @@
             transition: background-color 0.2s;
             width: 80%;
             max-width: 200px;
+            touch-action: manipulation;  /* Removes click delay on touch devices */
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
         }
         .menu-button:hover {
             background: #2667cc;

@@ -263,6 +263,7 @@ function toggleMenu() {
     if (!gameState.gameStarted) return;
     
     const menuScreen = document.getElementById('menuScreen');
+    menuScreen.style.willChange = 'opacity';  // Hint browser to optimize
     
     // Toggle menu state
     gameState.menuOpen = !gameState.menuOpen;
@@ -271,8 +272,9 @@ function toggleMenu() {
         // Update menu stats
         updateMenuStats();
         
-        // Show menu
-        menuScreen.style.display = 'block';
+        // Show menu using opacity instead of display
+        menuScreen.style.opacity = '1';
+        menuScreen.style.pointerEvents = 'auto';
         
         // Unlock pointer to allow interaction with menu
         controls.unlock();
@@ -284,17 +286,18 @@ function toggleMenu() {
         moveRight = false;
     } else {
         // Hide menu
-        menuScreen.style.display = 'none';
+        menuScreen.style.opacity = '0';
+        menuScreen.style.pointerEvents = 'none';
         
-        // Lock pointer to resume game
+        // Lock controls to resume game
         controls.lock();
     }
 }
 
+// Add a new unlock event listener that only handles game over
 controls.addEventListener('unlock', () => {
-    // Player unlocked controls
-    // Don't show menu if on title screen
-    if (gameState.gameStarted && !gameState.gameOver) {
+    if (gameState.gameStarted && !gameState.gameOver && !gameState.menuOpen) {
+        // Only open menu if game is running and menu isn't already open
         toggleMenu();
     }
 });
