@@ -3003,14 +3003,14 @@ function setupMobileOptimizations() {
             lastTouchY = touch.clientY;
         }
         
-        // ADDED: Also trigger shooting when tapping outside control areas
-        gameState.isMouseDown = true;
-        shoot();
+        // // ADDED: Also trigger shooting when tapping outside control areas
+        // gameState.isMouseDown = true;
+        // shoot();
         
-        // Add haptic feedback for shooting
-        if (navigator.vibrate && gameState.vibrationEnabled) {
-            navigator.vibrate(25);
-        }
+        // // Add haptic feedback for shooting
+        // if (navigator.vibrate && gameState.vibrationEnabled) {
+        //     navigator.vibrate(25);
+        // }
     });
     
     document.addEventListener('touchmove', function(e) {
