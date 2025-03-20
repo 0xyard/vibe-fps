@@ -45,14 +45,13 @@ let joystickMovement = { x: 0, y: 0 };
 let isJoystickActive = false;
 let joystickIntensity = 0; // Track joystick force for variable movement speed
 
-// Aiming joystick variables
-let aimJoystick = null;
-let aimJoystickMovement = { x: 0, y: 0 };
-let isAimJoystickActive = false;
-let aimJoystickIntensity = 0;
-
 // Touch sensitivity for mobile controls
 let touchSensitivity = 2.0; // Increased for better responsiveness
+
+// Variables for touch-based aiming
+let lastTouchX = 0;
+let lastTouchY = 0;
+let isTouchAiming = false;
 
 scene.add(camera);
 
@@ -2804,26 +2803,31 @@ function isMobileDevice() {    // Check if device is actually mobile
 function handleOrientationChange() {
     const isLandscape = window.innerWidth > window.innerHeight;
     debugLog('isLandscape: ' + isLandscape);
-    // Fix the ID to match what's used in initJoystick
-    const joystickContainer = document.getElementById('joystick-container');
-    const aimJoystickContainer = document.getElementById('aim-joystick-container');
     
+    // Get control elements
+    const joystickContainer = document.getElementById('joystick-container');
+    const shootButton = document.getElementById('shoot-button');
+    
+    // Use the existing isMobileDevice function which already checks screen size
     if (isMobileDevice()) {
-        debugLog('Mobile device detected');
-        // Always show controls on mobile devices regardless of orientation
+        debugLog('Mobile device or small screen detected');
+        // Always show movement joystick and shoot button on mobile devices
         if (joystickContainer) joystickContainer.style.display = 'block';
-        if (aimJoystickContainer) aimJoystickContainer.style.display = 'block';
+        if (shootButton) shootButton.style.display = 'block';
 
-        // Adjust positions for landscape mode if needed
+        // Adjust position for landscape mode if needed
         if (isLandscape) {
-            // You can adjust positions specifically for landscape if needed
             if (joystickContainer) joystickContainer.style.bottom = '50px';
-            if (aimJoystickContainer) aimJoystickContainer.style.bottom = '50px';
+            if (shootButton) shootButton.style.bottom = '50px';
+        } else {
+            // Reset positions for portrait mode
+            if (joystickContainer) joystickContainer.style.bottom = '100px';
+            if (shootButton) shootButton.style.bottom = '100px';
         }
     } else {
         // Hide controls on non-mobile devices
         if (joystickContainer) joystickContainer.style.display = 'none';
-        if (aimJoystickContainer) aimJoystickContainer.style.display = 'none';
+        if (shootButton) shootButton.style.display = 'none';
     }
 }
 
@@ -2839,20 +2843,6 @@ function initJoystick() {
         dynamicPage: true,
         fadeTime: 100,
         restOpacity: 0.8, // Increased opacity for better visibility
-        lockX: false,
-        lockY: false
-    });
-    
-    // Create aiming joystick with nipplejs
-    aimJoystick = nipplejs.create({
-        zone: document.getElementById('aim-joystick-container'),
-        mode: 'static',
-        position: { left: '50%', top: '50%' },
-        color: 'rgba(255, 255, 255, 0.8)',
-        size: 150,
-        dynamicPage: true,
-        fadeTime: 100,
-        restOpacity: 0.8,
         lockX: false,
         lockY: false
     });
@@ -2915,75 +2905,6 @@ function initJoystick() {
             joystickIntensity = 0;
         }
     });
-    
-    // Handle aiming joystick events
-    aimJoystick.on('start', function() {
-        isAimJoystickActive = true;
-        
-        // Hide the aim icon when joystick is active
-        const aimIcon = document.getElementById('aim-icon');
-        if (aimIcon) aimIcon.style.display = 'none';
-        
-        // Start shooting when joystick is touched
-        if (!gameState.menuOpen && !gameState.gameOver && controls.isLocked) {
-            gameState.isMouseDown = true;
-            shoot();
-            
-            // Add haptic feedback for shooting
-            if (navigator.vibrate && gameState.vibrationEnabled) {
-                navigator.vibrate(25);
-            }
-        }
-        
-        // Resume audio context on joystick interaction
-        if (audioContext && audioContext.state === "suspended") {
-            audioContext.resume();
-        }
-    });
-    
-    aimJoystick.on('end', function() {
-        isAimJoystickActive = false;
-        aimJoystickMovement = { x: 0, y: 0 };
-        
-        // Stop shooting when joystick is released
-        gameState.isMouseDown = false;
-        
-        // Show the aim icon again when joystick is released
-        const aimIcon = document.getElementById('aim-icon');
-        if (aimIcon) aimIcon.style.display = 'block';
-    });
-    
-    aimJoystick.on('move', function(evt, data) {
-        // Get joystick movement data
-        const force = Math.min(data.force, 1); // Normalize force between 0 and 1
-        const angle = data.angle.radian;
-        
-        // Calculate x and y components
-        aimJoystickMovement.x = Math.cos(angle) * force;
-        aimJoystickMovement.y = Math.sin(angle) * force;
-        
-        // Store intensity for camera rotation speed
-        aimJoystickIntensity = force;
-        
-        // Apply camera rotation by dispatching a synthetic mouse event
-        if (controls.isLocked) {
-            // Calculate movement based on joystick position and sensitivity
-            // Invert both X and Y for correct directional control
-            const movementX = aimJoystickMovement.x * 10 * touchSensitivity; // Removed negative sign to fix left/right
-            const movementY = -aimJoystickMovement.y * 10 * touchSensitivity; // Keep negative for correct up/down
-            
-            // Create and dispatch a synthetic mouse event
-            const mouseEvent = new MouseEvent('mousemove', {
-                bubbles: true,
-                cancelable: true,
-                view: window,
-                movementX: movementX,
-                movementY: movementY
-            });
-            
-            document.dispatchEvent(mouseEvent);
-        }
-    });
 
     // Add orientation change detection
     window.addEventListener('orientationchange', handleOrientationChange);
@@ -2997,45 +2918,105 @@ function initJoystick() {
 function setupMobileOptimizations() {
     if (!isMobileDevice()) return;
     
-    // Add touch event for shooting
-    document.addEventListener('touchstart', function(e) {
-        // Don't trigger shooting if touching joystick areas or UI elements
-        const joystickArea = document.getElementById('joystick-container');
-        const aimJoystickArea = document.getElementById('aim-joystick-container');
-        const joystickRect = joystickArea.getBoundingClientRect();
-        const aimJoystickRect = aimJoystickArea.getBoundingClientRect();
+    // Handle shoot button
+    const shootButton = document.getElementById('shoot-button');
+    if (shootButton) {
+        shootButton.addEventListener('touchstart', function(e) {
+            e.preventDefault(); // Prevent default touch behavior
+            
+            // Don't shoot if game is paused or over
+            if (gameState.menuOpen || gameState.gameOver || !controls.isLocked) return;
+            
+            // Start shooting
+            gameState.isMouseDown = true;
+            
+            // Add haptic feedback for shooting
+            if (navigator.vibrate && gameState.vibrationEnabled) {
+                navigator.vibrate(25);
+            }
+        });
         
-        // Check if touch is in either joystick area
+        shootButton.addEventListener('touchend', function(e) {
+            e.preventDefault(); // Prevent default touch behavior
+            
+            // Stop shooting
+            gameState.isMouseDown = false;
+        });
+    }
+    
+    // Add touch event for aiming (but not shooting)
+    document.addEventListener('touchstart', function(e) {
+        // Don't process if touching joystick area, shoot button or UI elements
+        const joystickArea = document.getElementById('joystick-container');
+        const shootArea = document.getElementById('shoot-button');
+        const joystickRect = joystickArea.getBoundingClientRect();
+        const shootRect = shootArea.getBoundingClientRect();
+        
+        // Check if touch is in joystick or shoot button area
         for (let i = 0; i < e.touches.length; i++) {
             const touch = e.touches[i];
             if ((touch.clientX >= joystickRect.left && 
                 touch.clientX <= joystickRect.right && 
                 touch.clientY >= joystickRect.top && 
                 touch.clientY <= joystickRect.bottom) ||
-                (touch.clientX >= aimJoystickRect.left && 
-                touch.clientX <= aimJoystickRect.right && 
-                touch.clientY >= aimJoystickRect.top && 
-                touch.clientY <= aimJoystickRect.bottom)) {
-                return; // Don't shoot if touching joystick
+               (touch.clientX >= shootRect.left && 
+                touch.clientX <= shootRect.right && 
+                touch.clientY >= shootRect.top && 
+                touch.clientY <= shootRect.bottom)) {
+                return; // Don't start aiming if touching control areas
             }
         }
         
-        // Don't shoot if game is paused or over
-        if (gameState.menuOpen || gameState.gameOver) return;
+        // Don't process if game is paused or over
+        if (gameState.menuOpen || gameState.gameOver || !controls.isLocked) return;
         
-        // Start shooting (for touches outside joystick areas)
-        gameState.isMouseDown = true;
+        // Start aiming (but not shooting)
+        isTouchAiming = true;
         
-        // Add haptic feedback for shooting
-        if (navigator.vibrate && gameState.vibrationEnabled) {
-            navigator.vibrate(25);
+        // Store the initial touch position for aiming
+        if (e.touches.length > 0) {
+            const touch = e.touches[0];
+            lastTouchX = touch.clientX;
+            lastTouchY = touch.clientY;
+        }
+    });
+    
+    document.addEventListener('touchmove', function(e) {
+        // Don't process if not aiming or game is paused/over
+        if (!isTouchAiming || gameState.menuOpen || gameState.gameOver || !controls.isLocked) return;
+        
+        // Get current touch position
+        if (e.touches.length > 0) {
+            const touch = e.touches[0];
+            
+            // Calculate movement delta
+            const deltaX = touch.clientX - lastTouchX;
+            const deltaY = touch.clientY - lastTouchY;
+            
+            // Store new position
+            lastTouchX = touch.clientX;
+            lastTouchY = touch.clientY;
+            
+            // Apply movement to camera
+            if (Math.abs(deltaX) > 0 || Math.abs(deltaY) > 0) {
+                // Create and dispatch a synthetic mouse event for camera rotation
+                const mouseEvent = new MouseEvent('mousemove', {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window,
+                    movementX: deltaX * touchSensitivity,
+                    movementY: deltaY * touchSensitivity
+                });
+                
+                document.dispatchEvent(mouseEvent);
+            }
         }
     });
     
     document.addEventListener('touchend', function(e) {
-        // If no touches left, stop shooting
+        // If no touches left, stop aiming
         if (e.touches.length === 0) {
-            gameState.isMouseDown = false;
+            isTouchAiming = false;
         }
     });
     
