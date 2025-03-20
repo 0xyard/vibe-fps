@@ -438,6 +438,29 @@ if (isMobileDevice()) {
             lastTouchY = e.touches[0].clientY;
         }
         
+        // Check if touching joystick or shoot button
+        const joystickArea = document.getElementById('joystick-container');
+        const shootArea = document.getElementById('shoot-button');
+        if (!joystickArea || !shootArea) return;
+        
+        const joystickRect = joystickArea.getBoundingClientRect();
+        const shootRect = shootArea.getBoundingClientRect();
+        
+        // Check if touch is in joystick or shoot button area
+        for (let i = 0; i < e.touches.length; i++) {
+            const touch = e.touches[i];
+            if ((touch.clientX >= joystickRect.left && 
+                touch.clientX <= joystickRect.right && 
+                touch.clientY >= joystickRect.top && 
+                touch.clientY <= joystickRect.bottom) ||
+               (touch.clientX >= shootRect.left && 
+                touch.clientX <= shootRect.right && 
+                touch.clientY >= shootRect.top && 
+                touch.clientY <= shootRect.bottom)) {
+                return; // Don't start shooting if touching control areas
+            }
+        }
+        
         // If game is active, trigger shoot
         if (controls.isLocked && !gameState.gameOver && !gameState.menuOpen) {
             // Don't trigger shoot if tapping on pickup hint
@@ -2979,6 +3002,15 @@ function setupMobileOptimizations() {
             lastTouchX = touch.clientX;
             lastTouchY = touch.clientY;
         }
+        
+        // ADDED: Also trigger shooting when tapping outside control areas
+        gameState.isMouseDown = true;
+        shoot();
+        
+        // Add haptic feedback for shooting
+        if (navigator.vibrate && gameState.vibrationEnabled) {
+            navigator.vibrate(25);
+        }
     });
     
     document.addEventListener('touchmove', function(e) {
@@ -3017,6 +3049,9 @@ function setupMobileOptimizations() {
         // If no touches left, stop aiming
         if (e.touches.length === 0) {
             isTouchAiming = false;
+            
+            // ADDED: Also stop shooting when touch ends
+            gameState.isMouseDown = false;
         }
     });
     

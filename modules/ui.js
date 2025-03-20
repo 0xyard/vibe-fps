@@ -24,7 +24,7 @@ export function updateUI() {
   
   // Show ammo and reload status
   if (gameState.isReloading) {
-      ammoEl.textContent = `🔄 Reloading...`;
+      ammoEl.textContent = `🔄 Reload...`;
   } else {
       ammoEl.textContent = `🔫 ${gameState.ammo}/${gameState.maxAmmo}`;
   }
