@@ -202,9 +202,20 @@ export function showPickupHint(gunType) {
         hintEl = document.createElement('div');
         hintEl.id = 'pickupHint';
         hintEl.style.position = 'absolute';
-        hintEl.style.bottom = '20%';
-        hintEl.style.left = '50%';
-        hintEl.style.transform = 'translate(-50%, 0)';
+        
+        // Position differently based on device type
+        if (isMobileDevice()) {
+            // For mobile: center of screen
+            hintEl.style.top = '50%';
+            hintEl.style.left = '50%';
+            hintEl.style.transform = 'translate(-50%, -50%)';
+        } else {
+            // For desktop: near bottom
+            hintEl.style.bottom = '20%';
+            hintEl.style.left = '50%';
+            hintEl.style.transform = 'translate(-50%, 0)';
+        }
+        
         hintEl.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
         hintEl.style.color = 'white';
         hintEl.style.padding = '10px 20px';
@@ -220,6 +231,10 @@ export function showPickupHint(gunType) {
             hintEl.style.cursor = 'pointer';
             hintEl.style.backgroundColor = 'rgba(58, 134, 255, 0.7)';
             hintEl.style.border = '2px solid white';
+            hintEl.style.boxShadow = '0 0 15px rgba(58, 134, 255, 0.5)';
+            hintEl.style.padding = '15px 25px';
+            hintEl.style.fontSize = '20px';
+            hintEl.style.fontWeight = 'bold';
             
             // Add click event listener for mobile
             hintEl.addEventListener('click', function(e) {
@@ -266,7 +281,7 @@ export function showPickupHint(gunType) {
     
     // Different text for mobile vs desktop
     if (isMobileDevice()) {
-        hintEl.innerHTML = `<strong>TAP HERE</strong> to pick up ${gunName}`;
+        hintEl.innerHTML = `<strong>TAP HERE</strong><br>to pick up ${gunName}`;
     } else {
         hintEl.textContent = `Press E to pick up ${gunName}`;
     }
