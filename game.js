@@ -2171,6 +2171,88 @@ function animate() {
                 // Use the damage function to apply damage to player
                 playerTakeDamage(2, enemy.mesh.position);
             }
+            
+            // Special handling for fireball enemies
+            if (enemy.type === 'fireball') {
+                const currentTime = performance.now();
+                
+                // Calculate direction to player and check line of sight
+                const directionToPlayer = new THREE.Vector3().subVectors(camera.position, enemy.mesh.position).normalize();
+                
+                // Check for line of sight to player
+                const raycaster = new THREE.Raycaster(
+                    enemy.mesh.position.clone().add(new THREE.Vector3(0, 1, 0)), // Add height offset
+                    directionToPlayer,
+                    0,
+                    distanceToPlayer
+                );
+                const intersections = raycaster.intersectObjects(collisionObjects);
+                const hasLineOfSight = intersections.length === 0;
+                
+                // Store line of sight status in enemy mesh userData
+                enemy.mesh.userData.hasLineOfSight = hasLineOfSight;
+                
+                // Check if ready to fire a fireball (cooldown passed and has line of sight)
+                const timeSinceLastFireball = currentTime - enemy.mesh.userData.lastFireballTime;
+                
+                if (hasLineOfSight && timeSinceLastFireball > enemy.mesh.userData.fireballCooldown && distanceToPlayer < 20) {
+                    // Start charging fireball animation if not already charging
+                    if (!enemy.mesh.userData.isCharging) {
+                        enemy.mesh.userData.isCharging = true;
+                        enemy.mesh.userData.chargeStartTime = currentTime;
+                        
+                        // Grow mouth and emit particles during charging
+                        const mouth = enemy.mesh.children.find(child => child.position.z > 0.4);
+                        if (mouth) {
+                            mouth.scale.set(1.0, 1.0, 1.0); // Reset scale
+                            
+                            // Animation to grow mouth during charging
+                            const growMouth = () => {
+                                const chargeProgress = (performance.now() - enemy.mesh.userData.chargeStartTime) / enemy.mesh.userData.chargeDuration;
+                                if (chargeProgress < 1 && enemy.mesh.userData.isCharging) {
+                                    // Grow mouth as charge progresses
+                                    const scale = 1.0 + chargeProgress * 0.5;
+                                    mouth.scale.set(scale, scale, scale);
+                                    
+                                    // Increase emissive intensity
+                                    if (mouth.material) {
+                                        mouth.material.emissiveIntensity = 0.5 + chargeProgress * 0.5;
+                                    }
+                                    
+                                    requestAnimationFrame(growMouth);
+                                }
+                            };
+                            growMouth();
+                        }
+                    } else {
+                        // Check if charge is complete
+                        const chargeProgress = (currentTime - enemy.mesh.userData.chargeStartTime) / enemy.mesh.userData.chargeDuration;
+                        
+                        if (chargeProgress >= 1) {
+                            // Fire the fireball
+                            enemy.mesh.userData.isCharging = false;
+                            enemy.mesh.userData.lastFireballTime = currentTime;
+                            
+                            // Reset mouth size
+                            const mouth = enemy.mesh.children.find(child => child.position.z > 0.4);
+                            if (mouth) {
+                                mouth.scale.set(1.0, 1.0, 1.0);
+                                if (mouth.material) {
+                                    mouth.material.emissiveIntensity = 0.5;
+                                }
+                            }
+                            
+                            // Calculate fireball starting position (from mouth)
+                            const fireballPosition = enemy.mesh.position.clone();
+                            fireballPosition.y += 0.1; // Align with mouth
+                            fireballPosition.add(directionToPlayer.clone().multiplyScalar(0.7)); // Start in front of mouth
+                            
+                            // Create and launch fireball
+                            createFireball(fireballPosition, directionToPlayer);
+                        }
+                    }
+                }
+            }
         }
     }
     
@@ -2782,10 +2864,10 @@ function animateFireball(fireballData) {
         // Check for collisions with environment
         const rayDirection = fireballData.direction.clone();
         const raycaster = new THREE.Raycaster(
-            fireballData.mesh.position.clone(),
+            fireballData.mesh.position.clone().sub(rayDirection.clone().multiplyScalar(0.1)), // Start slightly behind current position
             rayDirection,
             0,
-            fireballData.speed * 2
+            fireballData.speed * 3 // Check further ahead to prevent clipping through thin walls
         );
         
         const intersects = raycaster.intersectObjects(collisionObjects);

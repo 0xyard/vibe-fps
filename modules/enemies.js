@@ -961,26 +961,34 @@ export function spawnEnemies() {
     // Calculate number of enemies based on wave level
     // Start with 10 enemies on wave 1, then add 5 more for each wave
     const enemyCount = 10 + ((gameState.level - 1) * 5);
-    
+
     // Calculate number of spider enemies (only appear after wave 1)
     // Start with 0 spiders in wave 1, then 5 in wave 2, and increase by 3 each wave
     const spiderCount = gameState.level > 1 ? 5 + (gameState.level - 2) * 3 : 0;
-    
+
     // Calculate number of flying enemies (only appear after wave 2)
     // Start with 0 flyers in waves 1-2, then 2 in wave 3, and increase by 2 each wave
     const flyingCount = gameState.level > 2 ? 2 + (gameState.level - 3) * 2 : 0;
-    
+
     // Calculate number of ninja enemies (only appear after wave 3)
     // Start with 0 ninjas in waves 1-3, then 2 in wave 4, and increase by 2 each wave
     const ninjaCount = gameState.level > 3 ? 2 + (gameState.level - 4) * 2 : 0;
-    
+
     // Calculate number of cyclops enemies (only appear after wave 4)
     // Start with 0 cyclops in waves 1-4, then 1 in wave 5, and increase by 1 each wave
     const cyclopsCount = gameState.level > 4 ? 1 + (gameState.level - 5) : 0;
-    
+
     // Calculate number of fireball enemies (only appear after wave 2)
     // Start with 0 fireball enemies in waves 1-5, then 2 in wave 6, and increase by 2 each wave
     const fireballCount = gameState.level > 5 ? 2 + (gameState.level - 6) * 2 : 0;
+
+    // Comment out for testing
+    // const enemyCount = 6;
+    // const spiderCount = 1;
+    // const flyingCount = 1;
+    // const ninjaCount = 1;
+    // const cyclopsCount = 1;
+    // const fireballCount = 1;
     
     // Calculate regular enemy count (total minus special types)
     const regularEnemyCount = enemyCount - spiderCount - flyingCount - ninjaCount - cyclopsCount - fireballCount;
