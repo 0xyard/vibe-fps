@@ -647,6 +647,18 @@ function createCyclopsEnemy() {
     cyclopsGroup.userData.lastSwingTime = performance.now();
     cyclopsGroup.userData.swingCooldown = 3000 + Math.random() * 1000; // 3-4 seconds between swings
     
+    // Initialize charge attack properties
+    cyclopsGroup.userData.isCharging = false;
+    cyclopsGroup.userData.isPreparingCharge = false;
+    cyclopsGroup.userData.chargeStartTime = 0;
+    cyclopsGroup.userData.chargeDuration = 2000; // 2 seconds of charging
+    cyclopsGroup.userData.chargeSpeed = 0.18; // Increased speed during charge (from 0.15)
+    cyclopsGroup.userData.chargeDirection = new THREE.Vector3();
+    cyclopsGroup.userData.lastChargeTime = performance.now();
+    cyclopsGroup.userData.chargeCooldown = 8000 + Math.random() * 2000; // 8-10 seconds between charges
+    cyclopsGroup.userData.chargePreparationDuration = 1500; // 1.5 seconds of preparation before charging
+    cyclopsGroup.userData.chargePreparationStartTime = 0;
+    
     // Make cyclops larger than other enemies
     cyclopsGroup.scale.set(1.5, 1.5, 1.5);
     
@@ -900,8 +912,8 @@ function spawnEnemy(type) {
             flyHeight = 0; // Ninjas don't fly
             break;
         case 'cyclops':
-            baseSpeed = 0.015; // Cyclops are slow but powerful
-            health = 2000; // Cyclops have high health
+            baseSpeed = 0.012; // Cyclops are slow but powerful (decreased from 0.015 to account for charging attack)
+            health = 3000; // Cyclops have higher health (increased from 2000 to make them tougher)
             bounceAmount = 0.03; // Cyclops barely bounce
             flyHeight = 0; // Cyclops don't fly
             break;

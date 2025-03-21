@@ -39,6 +39,9 @@ let moveRight = false;
 export let canJump = false;
 export let velocity = new THREE.Vector3();
 
+// Camera shake effect
+let cameraShake = 0;
+
 // Joystick variables
 let joystick = null;
 let joystickMovement = { x: 0, y: 0 };
@@ -119,7 +122,10 @@ const soundEffects = {
     teleport: new THREE.Audio(audioListener),
     thud: new THREE.Audio(audioListener),
     waveStart: new THREE.Audio(audioListener),
-    fireball: new THREE.Audio(audioListener)
+    fireball: new THREE.Audio(audioListener),
+    growl: new THREE.Audio(audioListener),
+    roar: new THREE.Audio(audioListener),
+    whoosh: new THREE.Audio(audioListener)
 };
 
 // Audio loader
@@ -139,7 +145,10 @@ function loadSoundEffects() {
         teleport: 'https://assets.mixkit.co/active_storage/sfx/1489/1489-preview.mp3',
         thud: 'https://assets.mixkit.co/active_storage/sfx/3046/3046-preview.mp3',
         waveStart: 'https://assets.mixkit.co/active_storage/sfx/2780/2780-preview.mp3',
-        fireball: 'https://assets.mixkit.co/active_storage/sfx/2656/2656-preview.mp3'
+        fireball: 'https://assets.mixkit.co/active_storage/sfx/2656/2656-preview.mp3',
+        growl: 'https://assets.mixkit.co/active_storage/sfx/3169/3169-preview.mp3',
+        roar: 'https://assets.mixkit.co/active_storage/sfx/3170/3170-preview.mp3',
+        whoosh: 'https://assets.mixkit.co/active_storage/sfx/3171/3171-preview.mp3'
     };
     
     // Function to load a single sound with retry
@@ -264,10 +273,7 @@ function toggleMenu() {
     const menuScreen = document.getElementById('menuScreen');
     menuScreen.style.willChange = 'opacity';  // Hint browser to optimize
     
-    // Toggle menu state
-    gameState.menuOpen = !gameState.menuOpen;
-    
-    if (gameState.menuOpen) {
+    if (!gameState.menuOpen) {
         // Update menu stats
         updateMenuStats();
         
@@ -287,10 +293,15 @@ function toggleMenu() {
         // Hide menu
         menuScreen.style.opacity = '0';
         menuScreen.style.pointerEvents = 'none';
-        
+
         // Lock controls to resume game
-        controls.lock();
+        setTimeout(() => {
+            controls.lock();
+        }, 600);
     }
+
+    // Toggle menu state
+    gameState.menuOpen = !gameState.menuOpen;
 }
 
 // Add a new unlock event listener that only handles game over
@@ -307,10 +318,9 @@ document.addEventListener('keydown', (event) => {
     // Don't process keyboard events if on title screen
     if (!gameState.gameStarted && event.code !== 'Escape') return;
     
-    // Always allow ESC key to toggle menu
-    if (event.code === 'Escape') {
-        toggleMenu();
-        return;
+    // Prevent spacebar from activating buttons when game is running
+    if (event.code === 'Space' && gameState.gameStarted && !gameState.gameOver) {
+        event.preventDefault();
     }
     
     // Skip other keys if menu is open
@@ -763,7 +773,9 @@ export function restartGame() {
     gameState.clickedGameOverButton = false; // Reset button click flag
     
     // Hide menu if it's open
-    document.getElementById('menuScreen').style.display = 'none';
+    const menuScreen = document.getElementById('menuScreen');
+    menuScreen.style.opacity = '0';
+    menuScreen.style.pointerEvents = 'none';
     
     // Reset camera position
     camera.position.set(0, 1.6, 0);
@@ -833,6 +845,27 @@ export function restartGame() {
         scene.remove(pickup.mesh);
     }
     sniperRiflePickups.length = 0;
+
+    // Remove all shotgun pickups
+    for (const pickup of shotgunPickups) {
+        pickup.isActive = false; // Mark as inactive to stop animations
+        scene.remove(pickup.mesh);
+    }
+    shotgunPickups.length = 0;
+
+    // Remove all rocket launcher pickups
+    for (const pickup of rocketLauncherPickups) {
+        pickup.isActive = false; // Mark as inactive to stop animations
+        scene.remove(pickup.mesh);
+    }
+    rocketLauncherPickups.length = 0;
+
+    // Remove all gatling gun pickups
+    for (const pickup of gatlingGunPickups) {
+        pickup.isActive = false; // Mark as inactive to stop animations
+        scene.remove(pickup.mesh);
+    }
+    gatlingGunPickups.length = 0;
     
     // Spawn new enemies and pickups
     spawnEnemies();
@@ -884,10 +917,22 @@ function init() {
     camera.add(gatlingGun);
     
     // Set up menu button event listeners
-    document.getElementById('resumeButton').addEventListener('click', toggleMenu);
-    document.getElementById('restartMenuButton').addEventListener('click', () => {
+    const resumeButton = document.getElementById('resumeButton');
+    resumeButton.addEventListener('click', toggleMenu);
+    resumeButton.addEventListener('keydown', function(event) {
+        if (event.code === 'Space') {
+            event.preventDefault();
+        }
+    });
+    const restartMenuButton = document.getElementById('restartMenuButton');
+    restartMenuButton.addEventListener('click', () => {
         toggleMenu(); // Close menu
         restartGame(); // Restart game
+    });
+    restartMenuButton.addEventListener('keydown', function(event) {
+        if (event.code === 'Space') {
+            event.preventDefault();
+        }
     });
     
     // Set up title screen start button
@@ -1044,6 +1089,23 @@ function animate() {
     // Update sun position to match directional light
     if (sun) {
         sun.position.copy(dirLight.position);
+    }
+    
+    // Apply camera shake effect if active
+    if (cameraShake > 0) {
+        // Apply random offset to camera
+        const shakeIntensity = cameraShake * 0.1;
+        camera.position.x += (Math.random() - 0.5) * shakeIntensity;
+        camera.position.y += (Math.random() - 0.5) * shakeIntensity;
+        camera.position.z += (Math.random() - 0.5) * shakeIntensity;
+        
+        // Reduce shake over time
+        cameraShake *= 0.9; // Decay factor
+        
+        // Reset shake when it gets very small
+        if (cameraShake < 0.01) {
+            cameraShake = 0;
+        }
     }
     
     // Skip game logic if game is over, menu is open, or controls are not locked
@@ -1435,151 +1497,244 @@ function animate() {
                 // Check if cyclops is close enough to player to swing club
                 const distanceToPlayer = enemy.mesh.position.distanceTo(camera.position);
                 
-                // If not currently swinging, check if it's time to swing
-                if (!enemy.mesh.userData.isSwinging) {
-                    // Swing when close to player and cooldown has passed
-                    if (distanceToPlayer < 5 && timeSinceLastSwing > enemy.mesh.userData.swingCooldown) {
-                        // Start swing animation
-                        enemy.mesh.userData.isSwinging = true;
-                        enemy.mesh.userData.swingStartTime = currentTime;
-                        
-                        // Create club swing effect
-                        createClubSwingEffect(enemy.mesh.position.clone(), directionToPlayer);
-                        
-                        // Deal heavy damage to player if close enough
-                        if (distanceToPlayer < 4) {
-                            playerTakeDamage(25, enemy.mesh.position);
-                            
-                            // Add screen shake for impact
-                            cameraShake = 0.3;
-                            
-                            // Add knockback effect to player
-                            const knockbackForce = directionToPlayer.clone().normalize().multiplyScalar(5);
-                            velocity.add(knockbackForce);
-                        }
-                    }
-                } else {
-                    // Currently swinging, animate the club
-                    const swingProgress = (currentTime - enemy.mesh.userData.swingStartTime) / enemy.mesh.userData.swingDuration;
-                    
-                    if (swingProgress >= 1) {
-                        // Swing animation complete
-                        enemy.mesh.userData.isSwinging = false;
-                        enemy.mesh.userData.lastSwingTime = currentTime;
-                        
-                        // Reset club to base rotation
-                        if (enemy.mesh.userData.club) {
-                            enemy.mesh.userData.club.rotation.copy(enemy.mesh.userData.clubBaseRotation);
-                        }
-                    } else {
-                        // Animate club swing
-                        if (enemy.mesh.userData.club) {
-                            // Swing the club in an arc
-                            const swingAngle = Math.PI * 1.2 * Math.sin(swingProgress * Math.PI);
-                            enemy.mesh.userData.club.rotation.z = enemy.mesh.userData.clubBaseRotation.z + swingAngle;
-                            
-                            // Also rotate the cyclops body slightly for more impact
-                            enemy.mesh.rotation.y = Math.sin(swingProgress * Math.PI) * 0.5;
-                        }
-                    }
-                }
+                // Calculate direction to player and check line of sight
+                const directionToPlayer = new THREE.Vector3().subVectors(camera.position, enemy.mesh.position).normalize();
                 
-                // Always face the player
-                enemy.mesh.lookAt(camera.position);
-            }
-            
-            // Special handling for fireball enemies
-            if (enemy.type === 'fireball') {
-                const currentTime = performance.now();
-                
-                // Animate fire particles
-                if (enemy.mesh.userData.particles) {
-                    enemy.mesh.userData.particles.forEach(particle => {
-                        const time = currentTime * 0.001;
-                        
-                        // Oscillate particles
-                        particle.mesh.position.x = particle.basePosition.x + Math.sin(time * 5 + particle.phase) * 0.1;
-                        particle.mesh.position.y = particle.basePosition.y + Math.cos(time * 5 + particle.phase) * 0.1;
-                        particle.mesh.position.z = particle.basePosition.z + Math.sin(time * 5 + particle.phase + Math.PI/2) * 0.1;
-                    });
-                }
-                
-                // Get distance to player
-                const distanceToPlayer = enemy.mesh.position.distanceTo(camera.position);
-                
-                // Check if enemy has line of sight to player
+                // Check for line of sight to player
                 const raycaster = new THREE.Raycaster(
-                    enemy.mesh.position.clone(),
+                    enemy.mesh.position.clone().add(new THREE.Vector3(0, 1, 0)), // Add height offset
                     directionToPlayer,
                     0,
                     distanceToPlayer
                 );
+                const intersections = raycaster.intersectObjects(collisionObjects);
+                const hasLineOfSight = intersections.length === 0;
                 
-                const intersects = raycaster.intersectObjects(collisionObjects);
-                const hasLineOfSight = intersects.length === 0;
-                
-                // Store line of sight status
-                enemy.mesh.userData.hasLineOfSight = hasLineOfSight;
-                
-                // If enemy has line of sight and cooldown has passed, shoot fireball
-                const timeSinceLastFireball = currentTime - enemy.mesh.userData.lastFireballTime;
-                
-                if (hasLineOfSight && timeSinceLastFireball > enemy.mesh.userData.fireballCooldown && distanceToPlayer < 20) {
-                    // Start charging fireball
-                    if (!enemy.mesh.userData.isCharging) {
-                        enemy.mesh.userData.isCharging = true;
-                        enemy.mesh.userData.chargeStartTime = currentTime;
-                        
-                        // Make mouth glow brighter during charging
-                        const mouth = enemy.mesh.children.find(child => 
-                            child.position.z > 0.4 && child.position.y < 0);
-                        
-                        if (mouth) {
-                            mouth.material.emissiveIntensity = 1.0;
-                            mouth.scale.set(1.5, 1.5, 1.5);
-                        }
+                // Check if enemy is currently charging
+                if (enemy.mesh.userData.isCharging) {
+                    // During charge, move extremely fast in a straight line
+                    const chargeProgress = (currentTime - enemy.mesh.userData.chargeStartTime) / enemy.mesh.userData.chargeDuration;
+                    
+                    if (chargeProgress >= 1) {
+                        // Charge attack complete
+                        enemy.mesh.userData.isCharging = false;
+                        enemy.mesh.userData.lastChargeTime = currentTime;
                     } else {
-                        // Check if charging is complete
-                        const chargeTime = currentTime - enemy.mesh.userData.chargeStartTime;
+                        // Continue charging in the stored direction
+                        const chargeMovement = enemy.mesh.userData.chargeDirection.clone()
+                            .multiplyScalar(enemy.mesh.userData.chargeSpeed);
                         
-                        if (chargeTime >= enemy.mesh.userData.chargeDuration) {
-                            // Reset charging state
-                            enemy.mesh.userData.isCharging = false;
-                            enemy.mesh.userData.lastFireballTime = currentTime;
+                        // Create trail effect
+                        const currentTime = performance.now();
+                        if (!enemy.mesh.userData.trailParticles) {
+                            enemy.mesh.userData.trailParticles = [];
+                            enemy.mesh.userData.lastTrailTime = currentTime;
+                        }
+                        
+                        // Add new trail particle every 50ms
+                        if (currentTime - enemy.mesh.userData.lastTrailTime > 50) {
+                            createChargeTrailParticle(enemy.mesh.position.clone());
+                            enemy.mesh.userData.lastTrailTime = currentTime;
+                        }
+                        
+                        // Check if player is in the path of charge or nearby
+                        const playerPosition = new THREE.Vector3();
+                        camera.getWorldPosition(playerPosition);
+                        
+                        // Project player's position onto the charge line
+                        const chargeLineStart = enemy.mesh.position.clone();
+                        const chargeLineEnd = enemy.mesh.position.clone().add(
+                            enemy.mesh.userData.chargeDirection.clone().multiplyScalar(20) // Look ahead by 20 units
+                        );
+                        
+                        // Calculate the closest point on the charge line to the player
+                        const chargeLine = chargeLineEnd.clone().sub(chargeLineStart);
+                        const chargeLineLength = chargeLine.length();
+                        const chargeLineDirection = chargeLine.clone().normalize();
+                        
+                        const playerToStart = playerPosition.clone().sub(chargeLineStart);
+                        const projectionLength = playerToStart.dot(chargeLineDirection);
+                        
+                        // Only check for collision if the player is ahead of the cyclops
+                        if (projectionLength > 0 && projectionLength < chargeLineLength) {
+                            const closestPoint = chargeLineStart.clone().add(
+                                chargeLineDirection.clone().multiplyScalar(projectionLength)
+                            );
                             
-                            // Reset mouth appearance
-                            const mouth = enemy.mesh.children.find(child => 
-                                child.position.z > 0.4 && child.position.y < 0);
+                            const distanceToChargeLine = playerPosition.distanceTo(closestPoint);
                             
-                            if (mouth) {
-                                mouth.material.emissiveIntensity = 0.5;
-                                mouth.scale.set(1, 1, 1);
-                            }
-                            
-                            // Create fireball
-                            const fireballPosition = enemy.mesh.position.clone();
-                            fireballPosition.y += 0.1; // Adjust height
-                            fireballPosition.add(directionToPlayer.clone().multiplyScalar(0.7)); // Start in front of mouth
-                            
-                            createFireball(fireballPosition, directionToPlayer);
-                        } else {
-                            // Animate charging
-                            const chargeProgress = chargeTime / enemy.mesh.userData.chargeDuration;
-                            
-                            // Pulse mouth during charging
-                            const mouth = enemy.mesh.children.find(child => 
-                                child.position.z > 0.4 && child.position.y < 0);
-                            
-                            if (mouth) {
-                                const pulseScale = 1.5 + Math.sin(chargeProgress * Math.PI * 10) * 0.3;
-                                mouth.scale.set(pulseScale, pulseScale, pulseScale);
+                            // Check if players distance to charge path is within the direct hit range (1.5 units)
+                            if (distanceToChargeLine < 1.5 && distanceToPlayer < 3) {
+                                // Instant kill if player is directly in the path
+                                playerTakeDamage(20, enemy.mesh.position); // 20 * 5 = 100 damage (instant kill)
+                                
+                                // Create impact effect
+                                createClubSwingEffect(playerPosition.clone(), enemy.mesh.userData.chargeDirection.clone());
+                                
+                                // Add stronger screen shake for direct hit
+                                cameraShake = 0.8;
+                                
+                                // Play impact sound
+                                playSound('thud', 1.0);
+                            } 
+                            // Check if player is near the charge path (within 3 units)
+                            else if (distanceToChargeLine < 3 && distanceToPlayer < 3) {
+                                // Deal partial damage if player is near the path
+                                playerTakeDamage(5, enemy.mesh.position); // 5 * 5 = 25 damage
+                                
+                                // Create smaller impact effect
+                                createClubSwingEffect(playerPosition.clone(), enemy.mesh.userData.chargeDirection.clone(), 0.7);
+                                
+                                // Add screen shake for near hit
+                                cameraShake = 0.4;
+                                
+                                // Play impact sound
+                                playSound('thud', 0.7);
                             }
                         }
+                        
+                        // Calculate next position
+                        const nextPosition = enemy.mesh.position.clone().add(chargeMovement);
+                        
+                        // Check if next position would be outside map boundaries (100x100 map)
+                        const mapHalfWidth = 50; // Map is 100x100, centered at origin
+                        const isOutsideBoundary = 
+                            Math.abs(nextPosition.x) > mapHalfWidth - 2 || // Leave 2 unit buffer from edge
+                            Math.abs(nextPosition.z) > mapHalfWidth - 2;   // Leave 2 unit buffer from edge
+                        
+                        if (isOutsideBoundary) {
+                            // Stop charging when hitting boundary
+                            enemy.mesh.userData.isCharging = false;
+                            enemy.mesh.userData.lastChargeTime = currentTime;
+                            
+                            // Play impact sound
+                            playSound('thud', 0.8);
+                            
+                            // Create impact effect
+                            createClubSwingEffect(enemy.mesh.position.clone(), enemy.mesh.userData.chargeDirection.clone());
+                            
+                            // Add screen shake for impact
+                            cameraShake = 0.3;
+                            
+                            // Stop processing this enemy's charge
+                            continue;
+                        }
+                        
+                        // Move cyclops regardless of obstacles (clip through buildings)
+                        enemy.mesh.position.add(chargeMovement);
                     }
                 }
                 
                 // Movement behavior - maintain distance from player if has line of sight
                 if (hasLineOfSight) {
+                    // Check if the cyclops should start charging
+                    const timeSinceLastCharge = currentTime - enemy.mesh.userData.lastChargeTime;
+                    if (!enemy.mesh.userData.isCharging && 
+                        !enemy.mesh.userData.isPreparingCharge && 
+                        timeSinceLastCharge > enemy.mesh.userData.chargeCooldown &&
+                        distanceToPlayer > 5 && distanceToPlayer < 20) {
+                        
+                        // Start preparing to charge
+                        enemy.mesh.userData.isPreparingCharge = true;
+                        enemy.mesh.userData.chargePreparationStartTime = currentTime;
+                        
+                        // Play preparation sound
+                        playSound('growl', 0.7);
+                        
+                        // Stop moving during preparation
+                        enemy.mesh.userData.originalPosition = enemy.mesh.position.clone();
+                    }
+                    
+                    // During preparation, the cyclops stops and prepares to charge
+                    if (enemy.mesh.userData.isPreparingCharge) {
+                        // Keep the cyclops in place while preparing to charge
+                        enemy.mesh.position.copy(enemy.mesh.userData.originalPosition);
+                        
+                        // Add a "winding up" animation
+                        const prepProgress = (currentTime - enemy.mesh.userData.chargePreparationStartTime) / 
+                                            enemy.mesh.userData.chargePreparationDuration;
+                        
+                        // Make the cyclops crouch slightly before charging
+                        const crouchAmount = Math.sin(prepProgress * Math.PI) * 0.2;
+                        enemy.mesh.scale.y = 1.5 - crouchAmount; // Assuming original scale is 1.5
+                        
+                        const prepTime = currentTime - enemy.mesh.userData.chargePreparationStartTime;
+                        if (prepTime > enemy.mesh.userData.chargePreparationDuration) {
+                            // Start the charge
+                            enemy.mesh.userData.isPreparingCharge = false;
+                            enemy.mesh.userData.isCharging = true;
+                            enemy.mesh.userData.chargeStartTime = currentTime;
+                            enemy.mesh.userData.chargeDirection = directionToPlayer.clone();
+                            
+                            // Reset scale after preparation
+                            enemy.mesh.scale.y = 1.5;
+                            
+                            // Initialize trail particles
+                            enemy.mesh.userData.trailParticles = [];
+                            enemy.mesh.userData.lastTrailTime = currentTime;
+                            
+                            // Play charge sound
+                            playSound('roar', 0.8);
+                        }
+                        
+                        // Skip regular movement while preparing
+                        continue;
+                    }
+                    
+                    // Only do regular movement if not charging or preparing
+                    if (!enemy.mesh.userData.isCharging && !enemy.mesh.userData.isPreparingCharge) {
+                        // Check if cyclops should swing club
+                        if (!enemy.mesh.userData.isSwinging && 
+                            distanceToPlayer < 4 && 
+                            timeSinceLastSwing > enemy.mesh.userData.swingCooldown) {
+                            
+                            // Start club swing
+                            enemy.mesh.userData.isSwinging = true;
+                            enemy.mesh.userData.swingStartTime = currentTime;
+                            
+                            // Play swing sound
+                            playSound('whoosh', 0.6);
+                        }
+                        
+                        // Handle club swing animation
+                        if (enemy.mesh.userData.isSwinging) {
+                            const swingProgress = (currentTime - enemy.mesh.userData.swingStartTime) / enemy.mesh.userData.swingDuration;
+                            
+                            // Animate the club
+                            if (enemy.mesh.userData.club) {
+                                // Swing the club in an arc
+                                const swingAngle = Math.PI * 1.2 * Math.sin(swingProgress * Math.PI);
+                                enemy.mesh.userData.club.rotation.z = enemy.mesh.userData.clubBaseRotation.z - swingAngle;
+                            }
+                            
+                            // At the halfway point of the swing, check if the player is hit
+                            if (swingProgress >= 0.5 && swingProgress < 0.55 && distanceToPlayer < 5) {
+                                // Deal damage to player
+                                playerTakeDamage(20, enemy.mesh.position);
+                                
+                                // Create impact effect
+                                createClubSwingEffect(camera.position.clone(), directionToPlayer.clone().negate());
+                                
+                                // Add screen shake
+                                cameraShake = 0.4;
+                            }
+                            
+                            // End swing animation
+                            if (swingProgress >= 1) {
+                                enemy.mesh.userData.isSwinging = false;
+                                enemy.mesh.userData.lastSwingTime = currentTime;
+                                
+                                // Reset club to base rotation
+                                if (enemy.mesh.userData.club) {
+                                    enemy.mesh.userData.club.rotation.copy(enemy.mesh.userData.clubBaseRotation);
+                                }
+                            }
+                            
+                            // Skip movement during swing
+                            continue;
+                        }
+                        
+                        // Regular movement logic when not swinging
                     // If too close to player, move away
                     if (distanceToPlayer < enemy.mesh.userData.preferredDistance) {
                         // Move away from player
@@ -1593,6 +1748,7 @@ function animate() {
                         const strafeDirection = new THREE.Vector3(-directionToPlayer.z, 0, directionToPlayer.x);
                         const strafeAmount = Math.sin(currentTime * 0.001) * enemy.speed * 0.5;
                         enemy.mesh.position.add(strafeDirection.multiplyScalar(strafeAmount));
+                        }
                     }
                 } else {
                     // No line of sight, try to get closer to player
@@ -2359,12 +2515,12 @@ function createSlashEffect(position, direction) {
 }
 
 // Create a visual club swing effect
-function createClubSwingEffect(position, direction) {
+function createClubSwingEffect(position, direction, scale = 1.0) {
     // Create a group for the club swing effect
     const swingGroup = new THREE.Group();
     
     // Create a shockwave-like effect
-    const shockwaveGeometry = new THREE.RingGeometry(0.5, 2.5, 32);
+    const shockwaveGeometry = new THREE.RingGeometry(0.5 * scale, 2.5 * scale, 32);
     const shockwaveMaterial = new THREE.MeshBasicMaterial({ 
         color: 0xffcc00, 
         transparent: true, 
@@ -2378,11 +2534,11 @@ function createClubSwingEffect(position, direction) {
     shockwave.position.copy(position);
     
     // Add some dust particles
-    const particleCount = 15;
+    const particleCount = Math.floor(15 * scale);
     const particles = [];
     
     for (let i = 0; i < particleCount; i++) {
-        const particleGeometry = new THREE.SphereGeometry(0.1 + Math.random() * 0.2, 8, 8);
+        const particleGeometry = new THREE.SphereGeometry((0.1 + Math.random() * 0.2) * scale, 8, 8);
         const particleMaterial = new THREE.MeshBasicMaterial({
             color: 0xbbbbbb, // Gray dust
             transparent: true,
@@ -2393,7 +2549,7 @@ function createClubSwingEffect(position, direction) {
         
         // Position particles in a cone shape in front of the club
         const angle = Math.random() * Math.PI / 2 - Math.PI / 4;
-        const radius = 1 + Math.random() * 2;
+        const radius = (1 + Math.random() * 2) * scale;
         
         // Calculate position relative to the direction
         const particleDir = direction.clone();
@@ -2405,7 +2561,7 @@ function createClubSwingEffect(position, direction) {
         
         particles.push({
             mesh: particle,
-            velocity: particleDir.clone().normalize().multiplyScalar(0.05 + Math.random() * 0.1),
+            velocity: particleDir.clone().normalize().multiplyScalar((0.05 + Math.random() * 0.1) * scale),
             gravity: 0.002 + Math.random() * 0.002
         });
         
@@ -3160,4 +3316,52 @@ function reduceShadowQualityForMobile() {
         dirLight.shadow.mapSize.width = 1024;  // Reduced from 2048
         dirLight.shadow.mapSize.height = 1024; // Reduced from 2048
     }
+}
+
+// Add this new function after createClubSwingEffect function
+function createChargeTrailParticle(position) {
+    // Create a trail particle
+    const particleGeometry = new THREE.SphereGeometry(0.2, 8, 8);
+    const particleMaterial = new THREE.MeshBasicMaterial({
+        color: 0xff6600,
+        transparent: true,
+        opacity: 0.7
+    });
+    
+    const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+    particle.position.copy(position);
+    
+    // Add slight random offset
+    particle.position.x += (Math.random() - 0.5) * 0.2;
+    particle.position.y += 0.1 + Math.random() * 0.3; // Slightly above ground
+    particle.position.z += (Math.random() - 0.5) * 0.2;
+    
+    scene.add(particle);
+    
+    // Store creation time for animation
+    particle.userData.creationTime = performance.now();
+    particle.userData.lifetime = 500 + Math.random() * 200; // 500-700ms lifetime
+    
+    // Animate and remove the particle
+    function animateParticle() {
+        const elapsed = performance.now() - particle.userData.creationTime;
+        
+        if (elapsed > particle.userData.lifetime) {
+            scene.remove(particle);
+            return;
+        }
+        
+        // Fade out over time
+        const progress = elapsed / particle.userData.lifetime;
+        particle.material.opacity = 0.7 * (1 - progress);
+        
+        // Grow slightly then shrink
+        const scale = 1 + Math.sin(progress * Math.PI) * 0.5;
+        particle.scale.set(scale, scale, scale);
+        
+        // Continue animation
+        requestAnimationFrame(animateParticle);
+    }
+    
+    animateParticle();
 }
