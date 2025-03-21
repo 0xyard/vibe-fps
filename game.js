@@ -273,10 +273,7 @@ function toggleMenu() {
     const menuScreen = document.getElementById('menuScreen');
     menuScreen.style.willChange = 'opacity';  // Hint browser to optimize
     
-    // Toggle menu state
-    gameState.menuOpen = !gameState.menuOpen;
-    
-    if (gameState.menuOpen) {
+    if (!gameState.menuOpen) {
         // Update menu stats
         updateMenuStats();
         
@@ -296,10 +293,15 @@ function toggleMenu() {
         // Hide menu
         menuScreen.style.opacity = '0';
         menuScreen.style.pointerEvents = 'none';
-        
+
         // Lock controls to resume game
-        controls.lock();
+        setTimeout(() => {
+            controls.lock();
+        }, 600);
     }
+
+    // Toggle menu state
+    gameState.menuOpen = !gameState.menuOpen;
 }
 
 // Add a new unlock event listener that only handles game over
@@ -316,10 +318,9 @@ document.addEventListener('keydown', (event) => {
     // Don't process keyboard events if on title screen
     if (!gameState.gameStarted && event.code !== 'Escape') return;
     
-    // Always allow ESC key to toggle menu
-    if (event.code === 'Escape') {
-        toggleMenu();
-        return;
+    // Prevent spacebar from activating buttons when game is running
+    if (event.code === 'Space' && gameState.gameStarted && !gameState.gameOver) {
+        event.preventDefault();
     }
     
     // Skip other keys if menu is open
@@ -772,7 +773,9 @@ export function restartGame() {
     gameState.clickedGameOverButton = false; // Reset button click flag
     
     // Hide menu if it's open
-    document.getElementById('menuScreen').style.display = 'none';
+    const menuScreen = document.getElementById('menuScreen');
+    menuScreen.style.opacity = '0';
+    menuScreen.style.pointerEvents = 'none';
     
     // Reset camera position
     camera.position.set(0, 1.6, 0);
@@ -842,6 +845,27 @@ export function restartGame() {
         scene.remove(pickup.mesh);
     }
     sniperRiflePickups.length = 0;
+
+    // Remove all shotgun pickups
+    for (const pickup of shotgunPickups) {
+        pickup.isActive = false; // Mark as inactive to stop animations
+        scene.remove(pickup.mesh);
+    }
+    shotgunPickups.length = 0;
+
+    // Remove all rocket launcher pickups
+    for (const pickup of rocketLauncherPickups) {
+        pickup.isActive = false; // Mark as inactive to stop animations
+        scene.remove(pickup.mesh);
+    }
+    rocketLauncherPickups.length = 0;
+
+    // Remove all gatling gun pickups
+    for (const pickup of gatlingGunPickups) {
+        pickup.isActive = false; // Mark as inactive to stop animations
+        scene.remove(pickup.mesh);
+    }
+    gatlingGunPickups.length = 0;
     
     // Spawn new enemies and pickups
     spawnEnemies();
@@ -893,10 +917,22 @@ function init() {
     camera.add(gatlingGun);
     
     // Set up menu button event listeners
-    document.getElementById('resumeButton').addEventListener('click', toggleMenu);
-    document.getElementById('restartMenuButton').addEventListener('click', () => {
+    const resumeButton = document.getElementById('resumeButton');
+    resumeButton.addEventListener('click', toggleMenu);
+    resumeButton.addEventListener('keydown', function(event) {
+        if (event.code === 'Space') {
+            event.preventDefault();
+        }
+    });
+    const restartMenuButton = document.getElementById('restartMenuButton');
+    restartMenuButton.addEventListener('click', () => {
         toggleMenu(); // Close menu
         restartGame(); // Restart game
+    });
+    restartMenuButton.addEventListener('keydown', function(event) {
+        if (event.code === 'Space') {
+            event.preventDefault();
+        }
     });
     
     // Set up title screen start button

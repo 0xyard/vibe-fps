@@ -976,8 +976,7 @@ export function spawnEnemies() {
     
     // Calculate number of cyclops enemies (only appear after wave 4)
     // Start with 0 cyclops in waves 1-4, then 1 in wave 5, and increase by 1 each wave
-    // const cyclopsCount = gameState.level > 4 ? 1 + (gameState.level - 5) : 0;
-    const cyclopsCount = 1;
+    const cyclopsCount = gameState.level > 4 ? 1 + (gameState.level - 5) : 0;
     
     // Calculate number of fireball enemies (only appear after wave 2)
     // Start with 0 fireball enemies in waves 1-5, then 2 in wave 6, and increase by 2 each wave

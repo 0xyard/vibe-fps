@@ -2,8 +2,7 @@ import { gameState } from './state.js';
 import { restartGame, controls, camera, velocity } from '../game.js';
 import { safeExitPointerLock } from './utils.js';
 import { playSound } from '../game.js';
-import { updateUI } from './ui.js';
-import { damageOverlay } from './ui.js';
+import { updateUI, damageOverlay } from './ui.js';
 import * as THREE from 'three';
 
 // Check if game is over
